@@ -1,4 +1,4 @@
-maxapi-python>=1.2.2
+maxapi>=1.2.2
 aiohttp>=3.13,<4
 httpx>=0.28,<1
 python-dotenv>=1,<2
