@@ -30,10 +30,12 @@ class SpeechKitTranscriber:
 
         headers = {
             "Authorization": f"Api-Key {self.api_key}",
+            "Content-Type": "audio/ogg",
         }
 
         params = {
             "lang": self.language,
+            "format": "oggopus",
         }
 
         timeout = aiohttp.ClientTimeout(
@@ -51,14 +53,24 @@ class SpeechKitTranscriber:
                 data=audio_bytes,
             ) as response:
 
-                response.raise_for_status()
+                response_text = await response.text()
 
-                data = await response.json()
+                if response.status >= 400:
+                    raise RuntimeError(
+                        "Yandex SpeechKit error "
+                        f"{response.status}: "
+                        f"{response_text}"
+                    )
 
-        result = data.get(
-            "result",
-            "",
-        ).strip()
+                try:
+                    data = await response.json()
+                except Exception as exc:
+                    raise RuntimeError(
+                        "Yandex SpeechKit вернул "
+                        f"некорректный JSON: {response_text!r}"
+                    ) from exc
+
+        result = data.get("result", "").strip()
 
         if not result:
             raise RuntimeError(
