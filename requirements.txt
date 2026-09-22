@@ -1,0 +1,9 @@
+maxapi==1.2.2
+aiohttp>=3.13,<4
+httpx>=0.28,<1
+python-dotenv>=1,<2
+truststore>=0.10,<1
+pytest>=8,<10
+hypothesis>=6,<7
+fastapi>=0.115,<1
+uvicorn>=0.34,<1

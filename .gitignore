@@ -1,0 +1,53 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# === Виртуальные окружения ===
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# === Сборки / дистрибутивы ===
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+
+# === Тесты / кеши ===
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# === Редакторы / IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === ОС ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Переменные окружения и секреты ===
+.env
+.env.*
+!.env.example
+
+# === Логи ===
+*.log
+logs/
+
+# === Локальные БД ===
+*.sqlite3
+*.dbREADME.md
