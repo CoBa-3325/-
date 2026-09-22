@@ -1,8 +1,8 @@
 """Подготовка контекста и вызов LLM для формирования сводки."""
 
 from datetime import datetime, timezone
-from app.schemas.summary import SummaryPeriod
-from app.services.period_service import period_for_interval
+from  schemas.summary import SummaryPeriod
+from  services.period_service import period_for_interval
 
 class SummaryService:
     def __init__(self,repository,summarizer): self.repository=repository; self.summarizer=summarizer

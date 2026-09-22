@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging, uuid
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
-from app.payment.yookassa import YooKassaClient
+from  payment.yookassa import YooKassaClient
 logger=logging.getLogger(__name__)
 
 class PaymentService:

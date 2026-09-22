@@ -1,26 +1,26 @@
 """Application composition and MAX/YooKassa startup."""
 from __future__ import annotations
 import asyncio,logging
-from maxapi import Bot,Dispatcher
-from app.ai.speechkit import SpeechKitTranscriber
-from app.ai.summarizer import Summarizer
-from app.ai.yandex_gpt import YandexGPT
-from app.bot.handlers import register_handlers
-from app.config.settings import Settings
-from app.database.connection import connect
-from app.database.repository import Repository
-from app.services.message_service import MessageService
-from app.services.settings_service import SettingsService
-from app.services.summary_service import SummaryService
-from app.services.voice_service import VoiceService
-from app.services.token_service import TokenService
-from app.services.subscription_service import SubscriptionService
-from app.services.promotion_service import PromotionService
-from app.services.cabinet_service import CabinetService
-from app.services.payment_service import PaymentService
-from app.services.role_service import RoleService
-from app.services.cooldown_service import CooldownService
-from app.scheduler.scheduler import Scheduler
+from  maxapi import Bot,Dispatcher
+from  ai.speechkit import SpeechKitTranscriber
+from  ai.summarizer import Summarizer
+from  ai.yandex_gpt import YandexGPT
+from  bot.handlers import register_handlers
+from  config.settings import Settings
+from  database.connection import connect
+from  database.repository import Repository
+from  services.message_service import MessageService
+from  services.settings_service import SettingsService
+from  services.summary_service import SummaryService
+from  services.voice_service import VoiceService
+from  services.token_service import TokenService
+from  services.subscription_service import SubscriptionService
+from  services.promotion_service import PromotionService
+from  services.cabinet_service import CabinetService
+from  services.payment_service import PaymentService
+from  services.role_service import RoleService
+from  services.cooldown_service import CooldownService
+from  scheduler.scheduler import Scheduler
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s: %(message)s');logger=logging.getLogger(__name__)
 class Services:pass
 
@@ -43,12 +43,12 @@ async def main():
             import uvicorn
             from maxapi.webhook.fastapi import FastAPIMaxWebhook
             webhook=FastAPIMaxWebhook(dp=dp,bot=bot,secret=settings.max_webhook_secret);app=FastAPI(lifespan=webhook.lifespan);webhook.setup(app,path='/webhook')
-            @app.post('/yookassa/webhook')
+            @ post('/yookassa/webhook')
             async def yookassa_webhook(request:Request):
                 payload=await request.json();obj=payload.get('object',{}) or {}
                 try:await services.payment.handle_webhook_payment(obj.get('id',''));return JSONResponse({'ok':True})
                 except Exception:logger.exception('YooKassa webhook failed');return JSONResponse({'ok':False},status_code=500)
-            @app.get('/health')
+            @ get('/health')
             async def health():return {'status':'ok'}
             await bot.subscribe_webhook(url=settings.max_webhook_url,secret=settings.max_webhook_secret,update_types=['message_created','message_callback','bot_started']);await uvicorn.Server(uvicorn.Config(app,host=settings.max_webhook_host,port=settings.max_webhook_port,log_level='info')).serve()
         else:await dp.start_polling(bot)

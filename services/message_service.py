@@ -1,7 +1,7 @@
 """Сервис сохранения текстовых и голосовых сообщений в контекст."""
 
 from datetime import datetime,timezone
-from app.schemas.message import MessageRecord
+from  schemas.message import MessageRecord
 class MessageService:
     def __init__(self,repository): self.repository=repository
     def _save(self,**kw):

@@ -2,8 +2,8 @@
 from __future__ import annotations
 import json, secrets, sqlite3, string, uuid
 from datetime import datetime, timezone
-from app.schemas.message import MessageRecord
-from app.schemas.settings import ChatSettings
+from  schemas.message import MessageRecord
+from  schemas.settings import ChatSettings
 
 class Repository:
     def __init__(self, connection: sqlite3.Connection):

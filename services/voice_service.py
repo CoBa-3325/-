@@ -16,7 +16,7 @@ try:
 except ImportError:  # optional; ssl.create_default_context remains verified TLS
     truststore = None
 
-from app.ai.speechkit import SpeechKitTranscriber
+from  ai.speechkit import SpeechKitTranscriber
 
 logger = logging.getLogger(__name__)
 

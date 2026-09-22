@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from app.schemas.summary import SummaryPeriod
+from  schemas.summary import SummaryPeriod
 
 
 def period_for_interval(interval, now=None, custom_days=None):

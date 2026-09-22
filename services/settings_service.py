@@ -1,6 +1,6 @@
 """Сервис сохранения настроек периода консолидации для каждого чата."""
 
-from app.schemas.settings import ChatSettings
+from  schemas.settings import ChatSettings
 
 
 class SettingsService:

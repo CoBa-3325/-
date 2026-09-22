@@ -1,6 +1,6 @@
 """Подготовка длинного контекста и многошаговая суммаризация."""
 
-from app.ai.prompts import SYSTEM_PROMPT,SUMMARY_PROMPT
+from  ai.prompts import SYSTEM_PROMPT,SUMMARY_PROMPT
 class Summarizer:
     """Не допускает переполнения prompt: длинный контекст разбивается на части."""
     def __init__(self,client,max_prompt_chars): self.client=client; self.max_prompt_chars=max_prompt_chars

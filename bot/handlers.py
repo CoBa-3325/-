@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging, math, re
 from datetime import datetime, timezone
 from maxapi import types
-from app.bot.commands import HELP_TEXT
-from app.bot.keyboards import *
-from app.services.period_service import period_for_interval
+from  bot.commands import HELP_TEXT
+from  bot.keyboards import *
+from  services.period_service import period_for_interval
 logger=logging.getLogger(__name__)
 
 def _get(obj,name,default=None): return obj.get(name,default) if isinstance(obj,dict) else getattr(obj,name,default)
