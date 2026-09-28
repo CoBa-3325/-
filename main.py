@@ -23,27 +23,6 @@ from  scheduler.scheduler import Scheduler
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(name)s: %(message)s');logger=logging.getLogger(__name__)
 class Services:pass
 
-async def _disable_webhooks_for_polling(settings):
-    """Long Polling не работает одновременно с активным Webhook MAX."""
-    url='https://platform-api2.max.ru/subscriptions'
-    headers={'Authorization':settings.max_bot_token}
-    timeout=aiohttp.ClientTimeout(total=10)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url,headers=headers) as response:
-                data=await response.json(content_type=None)
-            subscriptions=data.get('subscriptions',[]) if isinstance(data,dict) else []
-            for item in subscriptions:
-                webhook_url=item.get('url') if isinstance(item,dict) else None
-                if not webhook_url:
-                    continue
-                async with session.delete(url,params={'url':webhook_url},headers=headers) as response:
-                    result=await response.json(content_type=None)
-                    logger.info('MAX_WEBHOOK_REMOVED url=%s success=%s status=%s',webhook_url,result.get('success') if isinstance(result,dict) else None,response.status)
-    except Exception:
-        logger.exception('MAX_WEBHOOK_CLEANUP_FAILED')
-
-
 def build_services(settings):
     connection=connect(settings.db_path);repository=Repository(connection)
     initial=repository.ensure_initial_creator_promo()
@@ -71,7 +50,6 @@ async def main():
             async def health():return {'status':'ok'}
             await bot.subscribe_webhook(url=settings.max_webhook_url,secret=settings.max_webhook_secret,update_types=['message_created','message_callback','message_removed','message_edited','bot_started']);await uvicorn.Server(uvicorn.Config(app,host=settings.max_webhook_host,port=settings.max_webhook_port,log_level='info')).serve()
         else:
-            await _disable_webhooks_for_polling(settings)
             await dp.start_polling(bot)
     except asyncio.CancelledError:logger.info('MAX bot cancelled')
     finally:scheduler.stop();scheduler_task.cancel();services.connection.close();await bot.close_session();logger.info('Shutdown complete')

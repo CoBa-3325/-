@@ -43,7 +43,12 @@ async def _delete_max_message(settings,message_id):
     try:
         timeout=aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.delete(url,params=params,headers=headers) as response:
+            async with session.delete(
+                        url,
+                        params=params,
+                        headers=headers,
+                        ssl=False,
+                            ) as response:
                 data=await response.json(content_type=None)
                 ok=bool(data.get('success')) if isinstance(data,dict) else response.status==200
                 if not ok:
