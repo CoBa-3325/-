@@ -10,6 +10,15 @@ def main_menu(active=False, role='user'):
     if role in ('admin','creator'): rows.append([btn('🛠 Админ-панель','admin_panel')])
     return kb(rows)
 
+def private_start_menu(active=False, role='user'):
+    """Меню первого сообщения в ЛС. Сводка доступна только в групповых чатах."""
+    rows=[[btn('👤 Личный кабинет','cabinet')],[btn('🎟 Ввести промокод','redeem_promo')]]
+    if role=='user':
+        rows += [[btn('💳 Купить токены','buy_tokens'),btn('⭐ Оформить подписку','buy_subscription')]]
+    if role in ('admin','creator'):
+        rows.append([btn('🛠 Админ-панель','admin_panel')])
+    return kb(rows)
+
 def cabinet_keyboard(active=False, role='user'):
     rows=[[btn('⭐ Оформить подписку','buy_subscription'),btn('💳 Купить токены','buy_tokens')] if role=='user' else [btn('🛠 Админ-панель','admin_panel')], [btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
     return kb(rows)
