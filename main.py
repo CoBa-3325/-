@@ -46,8 +46,8 @@ async def _disable_webhooks_for_polling(settings):
 
 def build_services(settings):
     connection=connect(settings.db_path);repository=Repository(connection)
-    initial=repository.ensure_initial_admin_promo()
-    if initial:logger.warning('INITIAL_ADMIN_PROMO_CREATED code=%s',initial['code'])
+    initial=repository.ensure_initial_creator_promo()
+    if initial:logger.warning('INITIAL_CREATOR_PROMO_CREATED code=%s',initial['code'])
     roles=RoleService(repository);gpt=YandexGPT(settings.yc_api_key,settings.yc_folder_id,settings.yandex_gpt_model);summarizer=Summarizer(gpt,settings.max_prompt_chars)
     message=MessageService(repository);summary=SummaryService(repository,summarizer);tokens=TokenService(repository,settings.free_tokens_per_user);subscription=SubscriptionService(repository,roles);promotion=PromotionService(repository,settings,roles);cabinet=CabinetService(repository,subscription,tokens,roles);payment=PaymentService(repository,settings,promotion,subscription,tokens);cooldown=CooldownService(repository,settings.request_cooldown_minutes)
     s=Services();s.connection=connection;s.repository=repository;s.message=message;s.summary=summary;s.settings=SettingsService(repository);s.tokens=tokens;s.subscription=subscription;s.promotion=promotion;s.cabinet=cabinet;s.payment=payment;s.roles=roles;s.cooldown=cooldown;s.settings_config=settings;return s

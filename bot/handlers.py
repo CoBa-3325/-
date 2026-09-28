@@ -4,7 +4,7 @@ import logging, math, re
 import aiohttp
 from datetime import datetime, timezone
 from maxapi import types
-from  bot.commands import HELP_TEXT
+from  bot.commands import GROUP_HELP_TEXT, PRIVATE_HELP_TEXT
 from  bot.keyboards import *
 from  services.period_service import period_for_interval
 from schemas.message import MessageRecord
@@ -68,7 +68,7 @@ async def _send_start_message(services, send, uid):
     """Единая реализация /start для команды и нативной кнопки Start в ЛС."""
     services.repository.upsert_user(uid)
     await send(
-        HELP_TEXT,
+        PRIVATE_HELP_TEXT,
         attachments=private_start_menu(
             services.subscription.is_active(uid),
             _role(services,uid),
@@ -114,7 +114,8 @@ def register_handlers(dp,services):
 
         if command in ('/start','/help'):
             menu = (main_menu if ctype=='chat' else private_start_menu)
-            await _send(event,HELP_TEXT,services.settings_config,menu(services.subscription.is_active(uid),_role(services,uid)));return
+            help_text = GROUP_HELP_TEXT if ctype=='chat' else PRIVATE_HELP_TEXT
+            await _send(event,help_text,services.settings_config,menu(services.subscription.is_active(uid),_role(services,uid)));return
         if command in ('/cabinet','/buy'):
             await _send(event,services.cabinet.render(uid),services.settings_config,cabinet_keyboard(services.subscription.is_active(uid),_role(services,uid)));return
         if command=='/buy_tokens':
@@ -123,7 +124,9 @@ def register_handlers(dp,services):
             await show_subscription(event,uid);return
         if command=='/summary':
             if ctype!='chat':
-                await event.message.answer('Команда /summary доступна только в беседах.');return
+                # В ЛС команда не выполняется и не вызывает никаких
+                # сообщений о групповой функциональности.
+                return
             # Само сообщение пользователя /summary удаляем только после
             # успешного формирования сводки. До этого оно остаётся в чате.
             services.repository.set_user_state(uid,'summary_origin',{'message_id':mid,'chat_id':int(chat_id)})
