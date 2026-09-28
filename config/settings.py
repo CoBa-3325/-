@@ -17,9 +17,8 @@ def _int(name,default,minimum=0):
 
 @dataclass(frozen=True)
 class Settings:
-    max_bot_token:str; yc_api_key:str; yc_folder_id:str; yandex_gpt_model:str; stt_language:str
-    summary_days:int; db_path:str; max_prompt_chars:int
-    max_voice_file_mb:int; max_voice_download_timeout:int; max_voice_download_retries:int; max_ca_bundle:str|None
+    max_bot_token:str; yc_api_key:str; yc_folder_id:str; yandex_gpt_model:str
+    db_path:str; max_prompt_chars:int
     max_outgoing_message_chars:int
     free_tokens_per_user:int; token_price_10:int
     subscription_price_1_month:int; subscription_price_3_months:int; subscription_price_6_months:int; subscription_tokens_per_month:int
@@ -31,9 +30,8 @@ class Settings:
     def from_env(cls):
         return cls(
             max_bot_token=_required('MAX_BOT_TOKEN'),yc_api_key=_required('YC_API_KEY'),yc_folder_id=_required('YC_FOLDER_ID'),
-            yandex_gpt_model=os.getenv('YANDEX_GPT_MODEL','yandexgpt-5-lite'),stt_language=os.getenv('STT_LANGUAGE','ru-RU'),
-            summary_days=_int('SUMMARY_DAYS',7,1),db_path=os.getenv('DB_PATH','data/chat_history.db'),max_prompt_chars=_int('MAX_PROMPT_CHARS',15000,1000),
-            max_voice_file_mb=_int('MAX_VOICE_FILE_MB',20,1),max_voice_download_timeout=_int('MAX_VOICE_DOWNLOAD_TIMEOUT',60,5),max_voice_download_retries=_int('MAX_VOICE_DOWNLOAD_RETRIES',2,1),max_ca_bundle=os.getenv('MAX_CA_BUNDLE') or None,
+            yandex_gpt_model=os.getenv('YANDEX_GPT_MODEL','yandexgpt-5-lite'),
+            db_path=os.getenv('DB_PATH','data/chat_history.db'),max_prompt_chars=_int('MAX_PROMPT_CHARS',15000,1000),
             max_outgoing_message_chars=_int('MAX_OUTGOING_MESSAGE_CHARS',3500,100),
             free_tokens_per_user=_int('FREE_TOKENS_PER_USER',30,0),token_price_10=_int('TOKEN_PRICE_10',300,0),
             subscription_price_1_month=_int('SUBSCRIPTION_PRICE_1_MONTH',99,0),subscription_price_3_months=_int('SUBSCRIPTION_PRICE_3_MONTHS',259,0),subscription_price_6_months=_int('SUBSCRIPTION_PRICE_6_MONTHS',559,0),subscription_tokens_per_month=_int('SUBSCRIPTION_TOKENS_PER_MONTH',30,0),

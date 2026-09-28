@@ -53,8 +53,49 @@ class Repository:
             (message.max_message_id,message.chat_id,message.user_id,message.user_name,message.text,message.source,message.timestamp.isoformat(),message.reply_to))
         self.connection.commit(); return cur.rowcount>0
 
-    def get_messages(self,chat_id,start,end):
-        return self.connection.execute("SELECT * FROM messages WHERE chat_id=? AND timestamp>=? AND timestamp<? ORDER BY timestamp ASC",(chat_id,start.isoformat(),end.isoformat())).fetchall()
+    def get_messages(self, chat_id, start, end, user_ids=None):
+        sql = "SELECT * FROM messages WHERE chat_id=? AND timestamp>=? AND timestamp<?"
+        params = [chat_id, start.isoformat(), end.isoformat()]
+        if user_ids:
+            ids = [int(x) for x in user_ids]
+            placeholders = ','.join('?' for _ in ids)
+            sql += f" AND user_id IN ({placeholders})"
+            params.extend(ids)
+        sql += " ORDER BY timestamp ASC"
+        return self.connection.execute(sql, params).fetchall()
+
+    def list_message_authors(self, chat_id):
+        """Return authors already observed by the bot in this chat."""
+        return self.connection.execute(
+            """SELECT user_id, MAX(user_name) AS user_name, COUNT(*) AS message_count
+               FROM messages
+              WHERE chat_id=? AND user_id IS NOT NULL
+              GROUP BY user_id
+              ORDER BY MAX(user_name) COLLATE NOCASE, user_id""",
+            (chat_id,),
+        ).fetchall()
+
+    def delete_message(self, max_message_id):
+        cur = self.connection.execute(
+            "DELETE FROM messages WHERE max_message_id=?",
+            (str(max_message_id),),
+        )
+        self.connection.commit()
+        return cur.rowcount == 1
+
+    def update_message(self, message: MessageRecord):
+        cur = self.connection.execute(
+            """UPDATE messages
+               SET chat_id=?, user_id=?, user_name=?, text=?, source=?, timestamp=?, reply_to=?
+             WHERE max_message_id=?""",
+            (
+                message.chat_id, message.user_id, message.user_name, message.text,
+                message.source, message.timestamp.isoformat(), message.reply_to,
+                message.max_message_id,
+            ),
+        )
+        self.connection.commit()
+        return cur.rowcount == 1
 
     def save_summary_run(self,chat_id,start,end,text):
         self.connection.execute("INSERT INTO summary_runs(chat_id,period_start,period_end,created_at,summary_text) VALUES(?,?,?,?,?)",(chat_id,start.isoformat(),end.isoformat(),self.now(),text)); self.connection.commit()

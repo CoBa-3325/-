@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS messages (
     user_id INTEGER,
     user_name TEXT NOT NULL,
     text TEXT NOT NULL,
-    source TEXT NOT NULL CHECK(source IN ('text','voice','poll')),
+    source TEXT NOT NULL CHECK(source IN ('text','poll')),
     timestamp TEXT NOT NULL,
     reply_to TEXT
 );
@@ -170,26 +170,35 @@ def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
 
 
 def _migrate_messages(connection: sqlite3.Connection) -> None:
+    """Rebuild the messages table when its source constraint still contains voice.
+
+    Existing voice records are intentionally discarded: voice messages are no longer
+    part of the product and therefore must not leak into future summaries.
+    """
     row = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").fetchone()
-    sql = (row[0] or '') if row else ''
-    if row and "'poll'" not in sql:
-        connection.execute("ALTER TABLE messages RENAME TO messages_legacy")
-        connection.execute("DROP INDEX IF EXISTS idx_messages_chat_time")
-        connection.execute("""CREATE TABLE messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            max_message_id TEXT NOT NULL UNIQUE,
-            chat_id INTEGER NOT NULL,
-            user_id INTEGER,
-            user_name TEXT NOT NULL,
-            text TEXT NOT NULL,
-            source TEXT NOT NULL CHECK(source IN ('text','voice','poll')),
-            timestamp TEXT NOT NULL,
-            reply_to TEXT
-        )""")
-        connection.execute("""INSERT OR IGNORE INTO messages(id,max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to)
-            SELECT id,max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to FROM messages_legacy""")
-        connection.execute("DROP TABLE messages_legacy")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_time ON messages(chat_id,timestamp)")
+    if not row:
+        return
+    sql = row[0] or ''
+    if "'voice'" not in sql:
+        return
+    connection.execute("ALTER TABLE messages RENAME TO messages_legacy")
+    connection.execute("DROP INDEX IF EXISTS idx_messages_chat_time")
+    connection.execute("""CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        max_message_id TEXT NOT NULL UNIQUE,
+        chat_id INTEGER NOT NULL,
+        user_id INTEGER,
+        user_name TEXT NOT NULL,
+        text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK(source IN ('text','poll')),
+        timestamp TEXT NOT NULL,
+        reply_to TEXT
+    )""")
+    connection.execute("""INSERT OR IGNORE INTO messages(id,max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to)
+        SELECT id,max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to
+        FROM messages_legacy WHERE source IN ('text','poll')""")
+    connection.execute("DROP TABLE messages_legacy")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat_time ON messages(chat_id,timestamp)")
 
 
 def _ensure_user_columns(connection: sqlite3.Connection) -> None:

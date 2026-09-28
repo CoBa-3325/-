@@ -6,6 +6,7 @@ from maxapi import types
 from  bot.commands import HELP_TEXT
 from  bot.keyboards import *
 from  services.period_service import period_for_interval
+from schemas.message import MessageRecord
 logger=logging.getLogger(__name__)
 
 def _get(obj,name,default=None): return obj.get(name,default) if isinstance(obj,dict) else getattr(obj,name,default)
@@ -26,16 +27,37 @@ async def _send(event,text,settings,attachments=None):
 
 def _role(services,uid): return services.roles.get_role(uid)
 
+async def _send_start_message(services, send, uid):
+    """Единая реализация /start для команды и нативной кнопки Start в ЛС."""
+    services.repository.upsert_user(uid)
+    await send(
+        HELP_TEXT,
+        attachments=main_menu(
+            services.subscription.is_active(uid),
+            _role(services,uid),
+        ),
+    )
+
 def register_handlers(dp,services):
     @dp.bot_started()
     async def bot_started(event):
-        uid=getattr(event,'user_id',None);chat_id=event.chat_id;chat_type='unknown';title=None
-        try:
-            chat=await event.fetch_chat();chat_type=str(getattr(chat,'type','unknown')).lower();title=getattr(chat,'title',None)
-        except Exception:pass
-        if uid:services.repository.upsert_user(uid)
-        services.repository.upsert_chat(chat_id,chat_type,title)
-        if uid: await event.bot.send_message(chat_id=chat_id,text='Привет! Я собираю контекст групповых обсуждений и по запросу формирую сводку. Откройте личный кабинет для управления доступом.')
+        # bot_started приходит только для личного диалога с ботом.
+        # Это именно нативная кнопка MAX «Начать», поэтому отдельную
+        # inline-кнопку в ЛС создавать не нужно.
+        uid=_get(_get(event,'user'),'user_id') or getattr(event,'user_id',None)
+        chat_id=_get(event,'chat_id')
+        if uid is None or chat_id is None:
+            logger.warning('BOT_STARTED_INVALID_EVENT event=%r',event)
+            return
+        services.repository.upsert_user(uid)
+        services.repository.upsert_chat(chat_id,'dialog')
+        await _send_start_message(
+            services,
+            lambda text,attachments=None: event.bot.send_message(
+                chat_id=chat_id, text=text, attachments=attachments
+            ),
+            uid,
+        )
 
     @dp.message_created()
     async def message_created(event):
@@ -58,7 +80,7 @@ def register_handlers(dp,services):
         if command in ('/cabinet','/buy'):
             await _send(event,services.cabinet.render(uid),services.settings_config,cabinet_keyboard(services.subscription.is_active(uid),_role(services,uid)));return
         if command=='/buy_tokens':
-            await event.message.answer('Осталось токенов: %s'%services.tokens.balance(uid),attachments=token_buy_keyboard());return
+            await event.message.answer('Осталось токенов: %s'%services.tokens.balance(uid),attachments=token_buy_keyboard(services.settings_config.token_price_10));return
         if command=='/buy_subscription':
             await show_subscription(event,uid);return
         if command=='/summary':
@@ -75,16 +97,6 @@ def register_handlers(dp,services):
         if ctype!='chat':return
         # Free trial is user-wide, never per chat.
         services.tokens.ensure_trial(uid)
-        audio=services.voice.find_audio_attachment(message)
-        if audio is not None:
-            try:
-                voice_text=await services.voice.process_voice_message(message)
-                services.message.save_voice(max_message_id=mid,chat_id=chat_id,user_id=uid,user_name=name,text=voice_text,timestamp_ms=int(timestamp),reply_to=None)
-                logger.info('VOICE_MESSAGE_SAVED chat_id=%s user_id=%s',chat_id,uid)
-            except Exception:
-                await event.message.answer('Не удалось расшифровать голосовое сообщение. Попробуйте ещё раз.')
-            return
-
         poll=extract_poll(message)
         if poll:
             try:
@@ -174,10 +186,53 @@ def register_handlers(dp,services):
             await event.message.answer('Главное меню:',attachments=main_menu(services.subscription.is_active(uid),role));return
         if payload=='summary_menu':
             if _chat_type(message)!='chat':await event.message.answer('Команда /summary доступна только в беседах.');return
-            await event.message.answer('За какой срок сформировать сводку?',attachments=summary_period_keyboard());return
+            await event.message.answer('Какую сводку сформировать?',attachments=summary_type_keyboard());return
+        if payload=='summary_type:general':
+            if _chat_type(message)!='chat':await event.message.answer('Команда /summary доступна только в беседах.');return
+            await event.message.answer('За какой срок сформировать общую сводку?',attachments=summary_period_keyboard());return
+        if payload in ('summary_type:people','summary_people'):
+            chat_id=_get(_get(message,'recipient'),'chat_id')
+            if _chat_type(message)!='chat' or chat_id is None:
+                await event.message.answer('Сегментация по людям доступна только в беседах.');return
+            authors=services.repository.list_message_authors(chat_id)
+            if not authors:
+                await event.message.answer('Пока нет сохранённых сообщений участников, по которым можно сделать сегментацию.');return
+            services.repository.set_user_state(uid,'summary_people',{'chat_id':int(chat_id),'selected':[]})
+            await event.message.answer('Выберите одного или нескольких участников:',attachments=summary_people_keyboard(authors,[]));return
+        if payload.startswith('summary_people_toggle:'):
+            state=services.repository.get_user_state(uid)
+            if not state or state[0]!='summary_people':
+                await event.message.answer('Сессия выбора участников истекла. Откройте сегментацию заново.');return
+            data=state[1]; chat_id=int(data['chat_id'])
+            if int(_get(_get(message,'recipient'),'chat_id') or chat_id)!=chat_id:
+                await event.message.answer('Выбор участников относится к другому чату.');return
+            target=int(payload.split(':',1)[1]); selected={int(x) for x in data.get('selected',[])}
+            if target in selected:selected.remove(target)
+            else:selected.add(target)
+            data['selected']=sorted(selected);services.repository.set_user_state(uid,'summary_people',data)
+            authors=services.repository.list_message_authors(chat_id)
+            await event.message.answer('Выберите одного или нескольких участников:',attachments=summary_people_keyboard(authors,data['selected']));return
+        if payload=='summary_people_done':
+            state=services.repository.get_user_state(uid)
+            if not state or state[0]!='summary_people' or not state[1].get('selected'):
+                await event.message.answer('Выберите хотя бы одного участника.');return
+            await event.message.answer('Теперь выберите период:',attachments=summary_people_period_keyboard());return
+        if payload.startswith('summary_people_period:'):
+            state=services.repository.get_user_state(uid)
+            if not state or state[0]!='summary_people' or not state[1].get('selected'):
+                await event.message.answer('Сессия выбора участников истекла. Откройте сегментацию заново.');return
+            data=state[1];chat_id=int(data['chat_id']);selected=[int(x) for x in data['selected']]
+            val=payload.split(':',1)[1]
+            services.repository.clear_user_state(uid)
+            if val=='all':
+                start=datetime(1970,1,1,tzinfo=timezone.utc);end=datetime.now(timezone.utc);title='всё время'
+            else:
+                days=max(1,min(int(val),3650));period=period_for_interval('custom',custom_days=days);start,end=period.start,period.end
+                title=f'{days} '+('день' if days==1 else 'дня' if 2<=days<=4 else 'дней')
+            await generate_summary_custom(event,uid,chat_id,start,end,title,user_ids=selected);return
         if payload=='redeem_promo':
             services.repository.set_user_state(uid,'redeem_promo',{});await event.message.answer('Введите промокод');return
-        if payload=='buy_tokens':await event.message.answer('Осталось токенов: %s'%services.tokens.balance(uid),attachments=token_buy_keyboard());return
+        if payload=='buy_tokens':await event.message.answer('Осталось токенов: %s'%services.tokens.balance(uid),attachments=token_buy_keyboard(services.settings_config.token_price_10));return
         if payload=='buy_subscription':await show_subscription(event,uid);return
         if payload=='token_buy:10':
             order,link=await services.payment.create_order(uid,'tokens','10',None);await send_payment(event,order,link);return
@@ -241,6 +296,27 @@ def register_handlers(dp,services):
             if services.repository.set_role_if_current(uid,'creator','user'):await event.message.answer('Вы больше не являетесь создателем.',attachments=main_menu(services.subscription.is_active(uid),'user'))
             else:await event.message.answer('Роль уже изменилась.')
             return
+        if payload.startswith('payment_check:'):
+            order_id=payload.split(':',1)[1]
+            try:
+                status=await services.payment.verify_order(order_id,uid)
+                order=services.repository.get_order(order_id)
+                if status is True:
+                    if order and order['product_type']=='tokens':
+                        await event.message.answer(f'✅ Оплата подтверждена. Начислено токенов: {order["token_amount"]}.\nБаланс: {services.tokens.balance(uid)}')
+                    else:
+                        end=services.subscription.active_until(uid)
+                        text='✅ Оплата подтверждена. Подписка активирована.'
+                        if end:text += f'\nПодписка действует до {end.astimezone(timezone.utc).strftime("%d.%m.%Y")}.'
+                        await event.message.answer(text)
+                elif status is None:
+                    await event.message.answer('⏳ Оплата ещё не подтверждена. Если вы уже оплатили заказ, подождите несколько секунд и нажмите «Проверить оплату» ещё раз.')
+                else:
+                    await event.message.answer('Оплата не подтверждена. Заказ ещё не оплачен или был отменён.')
+            except Exception:
+                logger.exception('PAYMENT_VERIFY_FAILED order_id=%s user_id=%s',order_id,uid)
+                await event.message.answer('Не удалось проверить оплату. Попробуйте ещё раз через несколько секунд.')
+            return
         if payload.startswith('retry:'):
             try:order,link=await services.payment.retry_order(payload.split(':',1)[1],uid);await send_payment(event,order,link)
             except Exception as exc:await event.message.answer(str(exc))
@@ -250,15 +326,15 @@ def register_handlers(dp,services):
 
     async def send_payment(event,order,link):
         if link:
-            await event.message.answer(f'Заказ {order["order_id"]} создан.',attachments=_inline([[{'type':'link','text':'Перейти к оплате','url':link}],[{'type':'callback','text':'Отмена','payload':f'cancel:{order["order_id"]}'}]]))
+            await event.message.answer(f'Заказ {order["order_id"]} создан.',attachments=_inline([[{'type':'link','text':'Перейти к оплате','url':link}],[{'type':'callback','text':'✅ Проверить оплату','payload':f'payment_check:{order["order_id"]}'}],[{'type':'callback','text':'Отмена','payload':f'cancel:{order["order_id"]}'}]]))
         else:await event.message.answer('Не удалось получить ссылку на оплату.')
 
-    async def generate_summary_custom(event,uid,chat_id,start,end,title):
+    async def generate_summary_custom(event,uid,chat_id,start,end,title,user_ids=None):
         remaining=services.cooldown.remaining_seconds(chat_id)
         if remaining:await event.message.answer(f'До следующего запроса осталось {math.ceil(remaining/60)} минут');return
         if not services.cooldown.acquire(chat_id):
             remaining=services.cooldown.remaining_seconds(chat_id);await event.message.answer(f'До следующего запроса осталось {math.ceil(remaining/60)} минут' if remaining else 'В этом чате уже выполняется запрос.');return
-        rows=services.repository.get_messages(chat_id,start,end)
+        rows=services.repository.get_messages(chat_id,start,end,user_ids=user_ids)
         if not rows:services.cooldown.release(chat_id);await event.message.answer('За выбранный период сообщений нет.');return
         op=None
         if not services.subscription.is_active(uid):
@@ -266,11 +342,73 @@ def register_handlers(dp,services):
             if op is None:services.cooldown.release(chat_id);await event.message.answer('Токены закончились.');return
         llm_succeeded=False
         try:
-            result=await services.summary.generate(chat_id=chat_id,start=start,end=end);llm_succeeded=True;services.cooldown.activate(chat_id);services.summary.save_run(chat_id,start,end,result);await _send(event,f'📊 Сводка за {title}\n\n{result}',services.settings_config)
+            result=await services.summary.generate(chat_id=chat_id,start=start,end=end,user_ids=user_ids);llm_succeeded=True;services.cooldown.activate(chat_id);services.summary.save_run(chat_id,start,end,result);await _send(event,f'📊 Сводка за {title}\n\n{result}',services.settings_config)
         except Exception:
             if op and not llm_succeeded:services.tokens.refund(uid,chat_id,op)
             services.cooldown.release(chat_id)
             logger.exception('LLM_REQUEST_FAILED chat_id=%s user_id=%s',chat_id,uid);await event.message.answer('Не удалось сформировать сводку. Токен возвращён, если он был списан.')
+
+
+    @dp.message_removed()
+    async def message_removed(event):
+        # По актуальной схеме MAX message_removed содержит message_id/chat_id
+        # непосредственно в Update. Оставляем fallback на вложенный объект,
+        # чтобы старые версии maxapi не ломали синхронизацию удаления.
+        message_id=_get(event,'message_id')
+        chat_id=_get(event,'chat_id')
+        if message_id is None:
+            nested=_get(event,'message') or _get(event,'data') or {}
+            message_id=_get(nested,'message_id') or _get(nested,'mid')
+            chat_id=chat_id or _get(nested,'chat_id')
+        if message_id is None:
+            logger.warning('MESSAGE_REMOVED_WITHOUT_ID event=%r',event)
+            return
+        removed=services.repository.delete_message(str(message_id))
+        logger.info(
+            'MESSAGE_REMOVED chat_id=%s message_id=%s deleted_from_context=%s',
+            chat_id,message_id,removed,
+        )
+
+    @dp.message_edited()
+    async def message_edited(event):
+        message=_get(event,'message')
+        if not message:
+            return
+        body=_get(message,'body') or {}
+        mid=str(_get(body,'mid') or _get(message,'message_id') or '')
+        if not mid:
+            return
+        chat_id=_get(_get(message,'recipient'),'chat_id')
+        sender=_get(message,'sender') or {}
+        uid=_get(sender,'user_id')
+        first=_get(sender,'first_name','');last=_get(sender,'last_name','')
+        name=' '.join(x for x in (first,last) if x).strip() or str(uid or 'Пользователь')
+        text=(_get(body,'text') or '').strip()
+        if chat_id is None:
+            return
+        if not text:
+            removed=services.repository.delete_message(mid)
+            logger.info('MESSAGE_EDITED_TO_NON_TEXT chat_id=%s message_id=%s deleted_from_context=%s',chat_id,mid,removed)
+            return
+        timestamp=_get(message,'timestamp') or _get(event,'timestamp')
+        if timestamp is None:
+            return
+        updated=services.repository.update_message(
+            MessageRecord(
+                max_message_id=mid,chat_id=int(chat_id),user_id=uid,user_name=name,
+                text=text,source='text',
+                timestamp=datetime.fromtimestamp(int(timestamp)/1000,tz=timezone.utc),reply_to=None,
+            )
+        )
+        logger.info('MESSAGE_EDITED chat_id=%s message_id=%s updated_in_context=%s',chat_id,mid,updated)
+
+
+def summary_people_period_keyboard():
+    return kb([
+        [btn('За 1 день','summary_people_period:1'),btn('За 3 дня','summary_people_period:3')],
+        [btn('За 7 дней','summary_people_period:7'),btn('За всё время','summary_people_period:all')],
+        [btn('↩️ Назад','summary_menu')],
+    ])
 
 
 def extract_poll(message):
