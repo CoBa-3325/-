@@ -54,8 +54,13 @@ async def _delete_max_message(settings,message_id):
         return False
 
 async def _delete_callback_message(event,settings):
-    """Удаляет старое сообщение бота, на кнопке которого пользователь нажал."""
+    """Удаляет старое сообщение бота только в ЛС.
+
+    В группах сообщения бота при навигации не удаляются.
+    """
     message=_get(event,'message')
+    if _chat_type(message) == 'chat':
+        return False
     body=_get(message,'body') or {}
     message_id=str(_get(body,'mid') or _get(message,'message_id') or '')
     if not message_id:
@@ -186,8 +191,6 @@ def register_handlers(dp,services):
             services.cooldown.activate(chat_id)
             services.summary.save_run(chat_id,period.start,period.end,result)
             await _send(event,f'📊 Сводка за {days} '+('день' if days==1 else 'дня' if 2<=days<=4 else 'дней')+'\n\n'+result,services.settings_config)
-            if source_user_message_id:
-                await _delete_max_message(services.settings_config,source_user_message_id)
         except Exception:
             if operation and not llm_succeeded:services.tokens.refund(uid,chat_id,operation)
             services.cooldown.release(chat_id)
@@ -401,8 +404,6 @@ def register_handlers(dp,services):
         llm_succeeded=False
         try:
             result=await services.summary.generate(chat_id=chat_id,start=start,end=end,user_ids=user_ids);llm_succeeded=True;services.cooldown.activate(chat_id);services.summary.save_run(chat_id,start,end,result);await _send(event,f'📊 Сводка за {title}\n\n{result}',services.settings_config)
-            if source_user_message_id:
-                await _delete_max_message(services.settings_config,source_user_message_id)
         except Exception:
             if op and not llm_succeeded:services.tokens.refund(uid,chat_id,op)
             services.cooldown.release(chat_id)
