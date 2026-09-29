@@ -4,7 +4,7 @@ import logging, math, re
 import aiohttp
 from datetime import datetime, timezone
 from maxapi import types
-from  bot.commands import HELP_TEXT
+from  bot.commands import GROUP_HELP_TEXT, PRIVATE_HELP_TEXT
 from  bot.keyboards import *
 from  services.period_service import period_for_interval
 from schemas.message import MessageRecord
@@ -43,7 +43,12 @@ async def _delete_max_message(settings,message_id):
     try:
         timeout=aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.delete(url,params=params,headers=headers) as response:
+            async with session.delete(
+                        url,
+                        params=params,
+                        headers=headers,
+                        ssl=False,
+                            ) as response:
                 data=await response.json(content_type=None)
                 ok=bool(data.get('success')) if isinstance(data,dict) else response.status==200
                 if not ok:
@@ -54,8 +59,13 @@ async def _delete_max_message(settings,message_id):
         return False
 
 async def _delete_callback_message(event,settings):
-    """Удаляет старое сообщение бота, на кнопке которого пользователь нажал."""
+    """Удаляет старое сообщение бота только в ЛС.
+
+    В группах сообщения бота при навигации не удаляются.
+    """
     message=_get(event,'message')
+    if _chat_type(message) == 'chat':
+        return False
     body=_get(message,'body') or {}
     message_id=str(_get(body,'mid') or _get(message,'message_id') or '')
     if not message_id:
@@ -68,7 +78,7 @@ async def _send_start_message(services, send, uid):
     """Единая реализация /start для команды и нативной кнопки Start в ЛС."""
     services.repository.upsert_user(uid)
     await send(
-        HELP_TEXT,
+        PRIVATE_HELP_TEXT,
         attachments=private_start_menu(
             services.subscription.is_active(uid),
             _role(services,uid),
@@ -114,6 +124,9 @@ def register_handlers(dp,services):
 
         if command in ('/start','/help'):
             await _send(event,HELP_TEXT,services.settings_config,main_menu(services.subscription.is_active(uid),_role(services,uid),ctype));return
+            menu = (main_menu if ctype=='chat' else private_start_menu)
+            help_text = GROUP_HELP_TEXT if ctype=='chat' else PRIVATE_HELP_TEXT
+            await _send(event,help_text,services.settings_config,menu(services.subscription.is_active(uid),_role(services,uid)));return
         if command in ('/cabinet','/buy'):
             await _send(event,services.cabinet.render(uid),services.settings_config,cabinet_keyboard(services.subscription.is_active(uid),_role(services,uid)));return
         if command=='/buy_tokens':
@@ -122,7 +135,9 @@ def register_handlers(dp,services):
             await show_subscription(event,uid);return
         if command=='/summary':
             if ctype!='chat':
-                await event.message.answer('Команда /summary доступна только в беседах.');return
+                # В ЛС команда не выполняется и не вызывает никаких
+                # сообщений о групповой функциональности.
+                return
             # Само сообщение пользователя /summary удаляем только после
             # успешного формирования сводки. До этого оно остаётся в чате.
             services.repository.set_user_state(uid,'summary_origin',{'message_id':mid,'chat_id':int(chat_id)})
@@ -182,8 +197,6 @@ def register_handlers(dp,services):
             services.cooldown.activate(chat_id)
             services.summary.save_run(chat_id,period.start,period.end,result)
             await _send(event,f'📊 Сводка за {days} '+('день' if days==1 else 'дня' if 2<=days<=4 else 'дней')+'\n\n'+result,services.settings_config)
-            if source_user_message_id:
-                await _delete_max_message(services.settings_config,source_user_message_id)
         except Exception:
             if operation and not llm_succeeded:services.tokens.refund(uid,chat_id,operation)
             services.cooldown.release(chat_id)
@@ -401,8 +414,6 @@ def register_handlers(dp,services):
         llm_succeeded=False
         try:
             result=await services.summary.generate(chat_id=chat_id,start=start,end=end,user_ids=user_ids);llm_succeeded=True;services.cooldown.activate(chat_id);services.summary.save_run(chat_id,start,end,result);await _send(event,f'📊 Сводка за {title}\n\n{result}',services.settings_config)
-            if source_user_message_id:
-                await _delete_max_message(services.settings_config,source_user_message_id)
         except Exception:
             if op and not llm_succeeded:services.tokens.refund(uid,chat_id,op)
             services.cooldown.release(chat_id)

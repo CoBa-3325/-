@@ -305,14 +305,47 @@ class Repository:
         except Exception:
             self.connection.rollback(); raise
 
-    def ensure_initial_admin_promo(self):
-        row=self.connection.execute("SELECT * FROM promo_codes WHERE code LIKE 'INITIAL-ADMIN-%' LIMIT 1").fetchone()
-        if row:return None
+    def ensure_initial_creator_promo(self):
+        # При первой инициализации создаётся одноразовый промокод
+        # именно на роль creator.
+        row=self.connection.execute(
+            "SELECT * FROM promo_codes "
+            "WHERE code LIKE 'INITIAL-CREATOR-%' LIMIT 1"
+        ).fetchone()
+        if row:
+            return None
+
+        # Если база уже была инициализирована старой версией,
+        # переводим неиспользованный стартовый промокод на creator.
+        legacy=self.connection.execute(
+            "SELECT * FROM promo_codes "
+            "WHERE code LIKE 'INITIAL-%' "
+            "AND reward_type='role' AND admin_role='admin' "
+            "ORDER BY id LIMIT 1"
+        ).fetchone()
+        if legacy and legacy['used_count']==0:
+            self.connection.execute(
+                "UPDATE promo_codes "
+                "SET admin_role='creator', "
+                "updated_at=? WHERE id=?",
+                (self.now(), legacy['id'])
+            )
+            self.connection.commit()
+            return self.get_promo(legacy['code'])
+
         alphabet=string.ascii_uppercase+string.digits
         while True:
-            code='INITIAL-ADMIN-'+''.join(secrets.choice(alphabet) for _ in range(24))
+            code='INITIAL-CREATOR-'+''.join(
+                secrets.choice(alphabet) for _ in range(24)
+            )
             try:
-                return self.create_promo(code=code,usage_type='once',reward_type='role',admin_role='admin',created_by=0)
+                return self.create_promo(
+                    code=code,
+                    usage_type='once',
+                    reward_type='role',
+                    admin_role='creator',
+                    created_by=0,
+                )
             except sqlite3.IntegrityError:
                 continue
 
