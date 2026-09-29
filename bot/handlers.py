@@ -374,12 +374,12 @@ def register_handlers(dp,services):
                 order=services.repository.get_order(order_id)
                 if status is True:
                     if order and order['product_type']=='tokens':
-                        await event.message.answer(f'✅ Оплата подтверждена. Начислено токенов: {order["token_amount"]}.\nБаланс: {services.tokens.balance(uid)}')
+                        await event.message.answer(f'✅ Оплата подтверждена. Начислено токенов: {order["token_amount"]}.\nБаланс: {services.tokens.balance(uid)}',attachments=cabinet_button_keyboard())
                     else:
                         end=services.subscription.active_until(uid)
                         text='✅ Оплата подтверждена. Подписка активирована.'
                         if end:text += f'\nПодписка действует до {end.astimezone(timezone.utc).strftime("%d.%m.%Y")}.'
-                        await event.message.answer(text)
+                        await event.message.answer(text,attachments=cabinet_button_keyboard())
                 elif status is None:
                     await event.message.answer('⏳ Оплата ещё не подтверждена. Если вы уже оплатили заказ, подождите несколько секунд и нажмите «Проверить оплату» ещё раз.')
                 else:

@@ -21,6 +21,10 @@ def back_keyboard(target='back'):
     """Клавиатура с единственной кнопкой возврата (например, для отмены ввода)."""
     return kb([[btn('↩️ Назад',target)]])
 
+def cabinet_button_keyboard():
+    """Кнопка перехода в личный кабинет (например, после успешной оплаты)."""
+    return kb([[btn('👤 Личный кабинет','cabinet')]])
+
 def cabinet_keyboard(active=False, role='user'):
     rows=[[btn('⭐ Оформить подписку','buy_subscription'),btn('💳 Купить токены','buy_tokens')] if role=='user' else [btn('🛠 Админ-панель','admin_panel')], [btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
     return kb(rows)
