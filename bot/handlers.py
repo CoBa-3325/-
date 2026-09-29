@@ -113,8 +113,7 @@ def register_handlers(dp,services):
             if await handle_state_input(event,uid,text,state): return
 
         if command in ('/start','/help'):
-            menu = (main_menu if ctype=='chat' else private_start_menu)
-            await _send(event,HELP_TEXT,services.settings_config,menu(services.subscription.is_active(uid),_role(services,uid)));return
+            await _send(event,HELP_TEXT,services.settings_config,main_menu(services.subscription.is_active(uid),_role(services,uid),ctype));return
         if command in ('/cabinet','/buy'):
             await _send(event,services.cabinet.render(uid),services.settings_config,cabinet_keyboard(services.subscription.is_active(uid),_role(services,uid)));return
         if command=='/buy_tokens':
@@ -195,7 +194,7 @@ def register_handlers(dp,services):
         name,data=state
         if name=='redeem_promo':
             p=services.promotion.redeem(uid,text);services.repository.clear_user_state(uid)
-            await event.message.answer('Промокод успешно активирован.' if p else 'Промокод недействителен или уже использован',attachments=main_menu(services.subscription.is_active(uid),_role(services,uid)));return True
+            await event.message.answer('Промокод успешно активирован.' if p else 'Промокод недействителен или уже использован',attachments=main_menu(services.subscription.is_active(uid),_role(services,uid),_chat_type(_get(event,'message'))));return True
         if name=='promo_token_amount':
             if not text.isdigit() or int(text)<=0:
                 await event.message.answer('Введите только число');return True
@@ -232,7 +231,7 @@ def register_handlers(dp,services):
         if payload=='cabinet':
             await event.message.answer(services.cabinet.render(uid),attachments=cabinet_keyboard(services.subscription.is_active(uid),role));return
         if payload=='back':
-            await event.message.answer('Главное меню:',attachments=main_menu(services.subscription.is_active(uid),role));return
+            await event.message.answer('Главное меню:',attachments=main_menu(services.subscription.is_active(uid),role,_chat_type(message)));return
         if payload=='summary_menu':
             if _chat_type(message)!='chat':await event.message.answer('Команда /summary доступна только в беседах.');return
             await event.message.answer('Какую сводку сформировать?',attachments=summary_type_keyboard());return
@@ -269,6 +268,8 @@ def register_handlers(dp,services):
                 await event.message.answer('Выберите хотя бы одного участника.');return
             await event.message.answer('Теперь выберите период:',attachments=summary_people_period_keyboard());return
         if payload.startswith('summary_people_period:'):
+            if _chat_type(message)!='chat':
+                services.repository.clear_user_state(uid);await event.message.answer('Сегментация по людям доступна только в беседах.');return
             state=services.repository.get_user_state(uid)
             if not state or state[0]!='summary_people' or not state[1].get('selected'):
                 await event.message.answer('Сессия выбора участников истекла. Откройте сегментацию заново.');return
@@ -292,6 +293,8 @@ def register_handlers(dp,services):
             if role!='user':await event.message.answer('Для административных ролей подписка бесконечная.');return
             order,link=await services.payment.create_order(uid,'subscription',tariff,None);await send_payment(event,order,link);return
         if payload.startswith('summary_period:'):
+            if _chat_type(message)!='chat':
+                await event.message.answer('Команда /summary доступна только в беседах.');return
             val=payload.split(':',1)[1]
             origin=services.repository.get_user_state(uid)
             origin_id=None
@@ -348,7 +351,7 @@ def register_handlers(dp,services):
             if role!='creator':await event.message.answer('Недостаточно прав.');return
             await event.message.answer('Вы точно хотите выйти из роли создателя? После подтверждения ваша роль будет изменена на обычного пользователя.',attachments=confirm_keyboard('confirm_creator_exit','admin_panel'));return
         if payload=='confirm_creator_exit':
-            if services.repository.set_role_if_current(uid,'creator','user'):await event.message.answer('Вы больше не являетесь создателем.',attachments=main_menu(services.subscription.is_active(uid),'user'))
+            if services.repository.set_role_if_current(uid,'creator','user'):await event.message.answer('Вы больше не являетесь создателем.',attachments=main_menu(services.subscription.is_active(uid),'user',_chat_type(message)))
             else:await event.message.answer('Роль уже изменилась.')
             return
         if payload.startswith('payment_check:'):

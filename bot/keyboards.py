@@ -4,20 +4,18 @@ from maxapi import types
 def kb(rows): return [types.ButtonsPayload(buttons=rows).pack()]
 def btn(text,payload): return {'type':'callback','text':text,'payload':payload}
 
-def main_menu(active=False, role='user'):
-    rows=[[btn('📊 Сводка','summary_menu')],[btn('👤 Личный кабинет','cabinet')],[btn('🎟 Ввести промокод','redeem_promo')]]
+def main_menu(active=False, role='user', chat_type='chat'):
+    """Главное меню. Сводка доступна только в групповых беседах."""
+    rows=[]
+    if chat_type=='chat': rows.append([btn('📊 Сводка','summary_menu')])
+    rows += [[btn('👤 Личный кабинет','cabinet')],[btn('🎟 Ввести промокод','redeem_promo')]]
     if role=='user': rows += [[btn('💳 Купить токены','buy_tokens'),btn('⭐ Оформить подписку','buy_subscription')]]
     if role in ('admin','creator'): rows.append([btn('🛠 Админ-панель','admin_panel')])
     return kb(rows)
 
 def private_start_menu(active=False, role='user'):
     """Меню первого сообщения в ЛС. Сводка доступна только в групповых чатах."""
-    rows=[[btn('👤 Личный кабинет','cabinet')],[btn('🎟 Ввести промокод','redeem_promo')]]
-    if role=='user':
-        rows += [[btn('💳 Купить токены','buy_tokens'),btn('⭐ Оформить подписку','buy_subscription')]]
-    if role in ('admin','creator'):
-        rows.append([btn('🛠 Админ-панель','admin_panel')])
-    return kb(rows)
+    return main_menu(active, role, chat_type='dialog')
 
 def cabinet_keyboard(active=False, role='user'):
     rows=[[btn('⭐ Оформить подписку','buy_subscription'),btn('💳 Купить токены','buy_tokens')] if role=='user' else [btn('🛠 Админ-панель','admin_panel')], [btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
