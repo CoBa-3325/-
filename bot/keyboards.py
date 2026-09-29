@@ -17,6 +17,10 @@ def private_start_menu(active=False, role='user'):
     """Меню первого сообщения в ЛС. Сводка доступна только в групповых чатах."""
     return main_menu(active, role, chat_type='dialog')
 
+def back_keyboard(target='back'):
+    """Клавиатура с единственной кнопкой возврата (например, для отмены ввода)."""
+    return kb([[btn('↩️ Назад',target)]])
+
 def cabinet_keyboard(active=False, role='user'):
     rows=[[btn('⭐ Оформить подписку','buy_subscription'),btn('💳 Купить токены','buy_tokens')] if role=='user' else [btn('🛠 Админ-панель','admin_panel')], [btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
     return kb(rows)

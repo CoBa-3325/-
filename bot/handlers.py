@@ -242,6 +242,8 @@ def register_handlers(dp,services):
         if payload=='cabinet':
             await event.message.answer(services.cabinet.render(uid),attachments=cabinet_keyboard(services.subscription.is_active(uid),role));return
         if payload=='back':
+            # Отмена любого незавершённого ввода (например, промокода) при возврате в меню.
+            services.repository.clear_user_state(uid)
             await event.message.answer('Главное меню:',attachments=main_menu(services.subscription.is_active(uid),role,_chat_type(message)));return
         if payload=='summary_menu':
             if _chat_type(message)!='chat':await event.message.answer('Команда /summary доступна только в беседах.');return
@@ -294,7 +296,7 @@ def register_handlers(dp,services):
                 title=f'{days} '+('день' if days==1 else 'дня' if 2<=days<=4 else 'дней')
             await generate_summary_custom(event,uid,chat_id,start,end,title,user_ids=selected,source_user_message_id=data.get('source_user_message_id'));return
         if payload=='redeem_promo':
-            services.repository.set_user_state(uid,'redeem_promo',{});await event.message.answer('Введите промокод');return
+            services.repository.set_user_state(uid,'redeem_promo',{});await event.message.answer('Введите промокод',attachments=back_keyboard());return
         if payload=='buy_tokens':await event.message.answer('Осталось токенов: %s'%services.tokens.balance(uid),attachments=token_buy_keyboard(services.settings_config.token_price_10));return
         if payload=='buy_subscription':await show_subscription(event,uid);return
         if payload=='token_buy:10':
