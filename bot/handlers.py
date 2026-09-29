@@ -123,10 +123,8 @@ def register_handlers(dp,services):
             if await handle_state_input(event,uid,text,state): return
 
         if command in ('/start','/help'):
-            await _send(event,HELP_TEXT,services.settings_config,main_menu(services.subscription.is_active(uid),_role(services,uid),ctype));return
-            menu = (main_menu if ctype=='chat' else private_start_menu)
             help_text = GROUP_HELP_TEXT if ctype=='chat' else PRIVATE_HELP_TEXT
-            await _send(event,help_text,services.settings_config,menu(services.subscription.is_active(uid),_role(services,uid)));return
+            await _send(event,help_text,services.settings_config,main_menu(services.subscription.is_active(uid),_role(services,uid),ctype));return
         if command in ('/cabinet','/buy'):
             await _send(event,services.cabinet.render(uid),services.settings_config,cabinet_keyboard(services.subscription.is_active(uid),_role(services,uid)));return
         if command=='/buy_tokens':
