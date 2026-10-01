@@ -7,7 +7,7 @@ class CabinetService:
     def render(self,user_id):
         role=self.role_service.get_role(user_id) if self.role_service else 'user'
         lines=[f'Добро пожаловать, {self.repository.user_display_name(user_id)}','']
-        if role in ('admin','creator'):
+        if role=='admin':
             lines += ['Срок подписки: ∞','Токены: ∞']
         elif self.subscription_service.is_unlimited(user_id):
             lines += ['Срок подписки: ∞','Токены: ∞']

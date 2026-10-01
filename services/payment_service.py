@@ -21,8 +21,6 @@ class PaymentService:
         self.yookassa = YooKassaClient(settings.yookassa_shop_id, settings.yookassa_secret_key)
 
     def _price(self, product, tariff):
-        if product == 'tokens' and tariff == '10':
-            return self.settings.token_price_10, 10, 0
         if product == 'subscription':
             mapping = {
                 '1_month': (self.settings.subscription_price_1_month, 0, 1),
@@ -86,38 +84,32 @@ class PaymentService:
         if order['status'] != 'pending':
             return False
 
-        if order['product_type'] == 'subscription':
-            now = datetime.now(timezone.utc)
-            row = self.repository.get_subscription(order['user_id'])
-            if row and row['is_unlimited_subscription']:
-                logger.warning(
-                    'PAYMENT_FULFILLMENT_SKIPPED_UNLIMITED order_id=%s user_id=%s',
-                    order['order_id'], order['user_id'],
-                )
-                return False
+        now = datetime.now(timezone.utc)
+        row = self.repository.get_subscription(order['user_id'])
+        if row and row['is_unlimited_subscription']:
+            logger.warning(
+                'PAYMENT_FULFILLMENT_SKIPPED_UNLIMITED order_id=%s user_id=%s',
+                order['order_id'], order['user_id'],
+            )
+            return False
 
-            current_end = (
-                datetime.fromisoformat(row['ends_at'])
-                if row and row['ends_at']
-                else now
-            )
-            base = current_end if current_end > now else now
-            start = (
-                datetime.fromisoformat(row['started_at'])
-                if row and current_end > now
-                else now
-            )
-            end = base + timedelta(days=30 * order['subscription_months'])
-            result = self.repository.fulfill_order(
-                order['order_id'],
-                subscription_start=start,
-                subscription_end=end,
-            )
-        else:
-            result = self.repository.fulfill_order(
-                order['order_id'],
-                token_amount=order['token_amount'],
-            )
+        current_end = (
+            datetime.fromisoformat(row['ends_at'])
+            if row and row['ends_at']
+            else now
+        )
+        base = current_end if current_end > now else now
+        start = (
+            datetime.fromisoformat(row['started_at'])
+            if row and current_end > now
+            else now
+        )
+        end = base + timedelta(days=30 * order['subscription_months'])
+        result = self.repository.fulfill_order(
+            order['order_id'],
+            subscription_start=start,
+            subscription_end=end,
+        )
 
         logger.info(
             'PAYMENT_FULFILLED payment_id=%s order_id=%s result=%s',

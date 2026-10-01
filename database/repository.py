@@ -48,6 +48,18 @@ class Repository:
             FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE m.user_id=? AND c.chat_type='chat'
             ORDER BY c.updated_at DESC""",(user_id,)).fetchall()
 
+    def list_group_chats(self):
+        """All group chats the bot knows about, newest activity first."""
+        return self.connection.execute(
+            "SELECT chat_id,chat_type,title,updated_at FROM chats WHERE chat_type='chat' ORDER BY updated_at DESC"
+        ).fetchall()
+
+    def update_chat_title(self,chat_id,title):
+        if not title:
+            return
+        self.connection.execute("UPDATE chats SET title=?,updated_at=? WHERE chat_id=?",(title,self.now(),chat_id))
+        self.connection.commit()
+
     def save_message(self,message:MessageRecord):
         cur=self.connection.execute("INSERT OR IGNORE INTO messages(max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to) VALUES(?,?,?,?,?,?,?,?)",
             (message.max_message_id,message.chat_id,message.user_id,message.user_name,message.text,message.source,message.timestamp.isoformat(),message.reply_to))
