@@ -1,7 +1,6 @@
 """MAX event handlers implementing the complete user/admin flow."""
 from __future__ import annotations
 import logging, math
-import aiohttp
 from datetime import datetime, timezone
 from maxapi import types
 from  bot.commands import GROUP_HELP_TEXT, PRIVATE_HELP_TEXT
@@ -29,31 +28,30 @@ async def _send(event,text,settings,attachments=None):
         sent.append(await event.message.answer(c,attachments=attachments if i==0 else None))
     return sent
 
-async def _delete_max_message(settings,message_id):
+async def _delete_max_message(bot,message_id):
     """Удаляет сообщение через официальный MAX API.
+
+    Используем HTTP-клиент maxapi (``bot.delete_message``), а не отдельную
+    aiohttp-сессию: у клиента maxapi корректно настроены доверенные
+    сертификаты, тогда как собственная сессия на сервере падает с
+    ``CERTIFICATE_VERIFY_FAILED``.
 
     В ЛС MAX разрешает боту удалять только собственные сообщения.
     В группе бот с правом удаления может удалить и сообщение пользователя.
     """
-    if not message_id:
+    if not message_id or bot is None:
         return False
-    url='https://platform-api2.max.ru/messages'
-    headers={'Authorization':settings.max_bot_token}
-    params={'message_id':str(message_id)}
     try:
-        timeout=aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.delete(url,params=params,headers=headers) as response:
-                data=await response.json(content_type=None)
-                ok=bool(data.get('success')) if isinstance(data,dict) else response.status==200
-                if not ok:
-                    logger.warning('MAX_MESSAGE_DELETE_FAILED message_id=%s status=%s response=%r',message_id,response.status,data)
-                return ok
+        result=await bot.delete_message(str(message_id))
+        ok=bool(getattr(result,'success',True))
+        if not ok:
+            logger.warning('MAX_MESSAGE_DELETE_REJECTED message_id=%s result=%r',message_id,result)
+        return ok
     except Exception:
-        logger.exception('MAX_MESSAGE_DELETE_REQUEST_FAILED message_id=%s',message_id)
+        logger.warning('MAX_MESSAGE_DELETE_FAILED message_id=%s',message_id,exc_info=True)
         return False
 
-async def _delete_callback_message(event,settings):
+async def _delete_callback_message(event):
     """Удаляет старое сообщение бота только в ЛС.
 
     В группах сообщения бота при навигации не удаляются.
@@ -65,7 +63,7 @@ async def _delete_callback_message(event,settings):
     message_id=str(_get(body,'mid') or _get(message,'message_id') or '')
     if not message_id:
         return False
-    return await _delete_max_message(settings,message_id)
+    return await _delete_max_message(_get(event,'bot'),message_id)
 
 def _role(services,uid): return services.roles.get_role(uid)
 
@@ -114,7 +112,7 @@ def register_handlers(dp,services):
             services.summary.save_run(chat_id,period.start,period.end,result)
             await _send(event,f'📊 Отчет за {days} '+('день' if days==1 else 'дня' if 2<=days<=4 else 'дней')+'\n\n'+result,services.settings_config)
             if source_user_message_id:
-                await _delete_max_message(services.settings_config,source_user_message_id)
+                await _delete_max_message(event.bot,source_user_message_id)
         except Exception:
             if operation and not llm_succeeded:services.tokens.refund(uid,chat_id,operation)
             services.cooldown.release(chat_id)
@@ -136,7 +134,7 @@ def register_handlers(dp,services):
         try:
             result=await services.summary.generate(chat_id=chat_id,start=start,end=end,user_ids=user_ids);llm_succeeded=True;services.cooldown.activate(chat_id);services.summary.save_run(chat_id,start,end,result);await _send(event,f'📊 Отчет за {title}\n\n{result}',services.settings_config)
             if source_user_message_id:
-                await _delete_max_message(services.settings_config,source_user_message_id)
+                await _delete_max_message(event.bot,source_user_message_id)
         except Exception:
             if op and not llm_succeeded:services.tokens.refund(uid,chat_id,op)
             services.cooldown.release(chat_id)
@@ -182,27 +180,7 @@ def register_handlers(dp,services):
         if name=='redeem_promo':
             p=services.promotion.redeem(uid,text);services.repository.clear_user_state(uid)
             await event.message.answer('Промокод успешно активирован.' if p else 'Промокод недействителен или уже использован',attachments=main_menu(services.subscription.is_active(uid),_role(services,uid),_chat_type(_get(event,'message'))));return True
-        if name=='promo_token_amount':
-            if not text.isdigit() or int(text)<=0:
-                await event.message.answer('Введите только число');return True
-            data['token_amount']=int(text);services.repository.set_user_state(uid,'promo_code',data);await event.message.answer('Введите промокод');return True
-        if name=='promo_code':
-            code=''.join(text.split()).upper()
-            if not code:await event.message.answer('Промокод не может быть пустым');return True
-            data['code']=code;services.repository.set_user_state(uid,'promo_usage',data);await event.message.answer('Выберите режим использования:',attachments=promo_usage_keyboard());return True
-        if name=='promo_max_uses':
-            if not text.isdigit() or int(text)<=0:await event.message.answer('Введите только положительное число');return True
-            data['max_uses']=int(text)
-            await create_promo_from_state(event,uid,data);return True
         return False
-
-    async def create_promo_from_state(event,uid,data):
-        try:
-            services.promotion.create(uid,code=data['code'],usage_type=data['usage_type'],max_uses=data.get('max_uses'),reward_type=data['reward_type'],token_amount=data.get('token_amount',0),subscription_months=data.get('subscription_months',0),unlimited=data.get('unlimited',False),admin_role=None)
-            services.repository.clear_user_state(uid);logger.info('PROMO_CREATED actor=%s reward=%s',uid,data['reward_type']);await event.message.answer('Промокод успешно создан.',attachments=admin_panel_keyboard(_role(services,uid)))
-        except Exception as exc:
-            if 'UNIQUE' in str(exc).upper():await event.message.answer('Такой промокод уже существует. Введите другой промокод.')
-            else:await event.message.answer(str(exc))
 
     async def send_payment(event,order,link):
         if link:
@@ -314,7 +292,7 @@ def register_handlers(dp,services):
         # Любой переход по inline-кнопке заменяет старое СООБЩЕНИЕ БОТА новым.
         # Сообщение-обращение в поддержку оставляем, чтобы был виден контекст.
         if not payload.startswith('support_reply:'):
-            await _delete_callback_message(event,services.settings_config)
+            await _delete_callback_message(event)
 
         if payload=='cabinet':
             await event.message.answer(services.cabinet.render(uid),attachments=cabinet_keyboard(services.subscription.is_active(uid),role));return
@@ -410,26 +388,6 @@ def register_handlers(dp,services):
                 lines.append(f'{i}. «{title or "Без названия"}» — id {cid}')
             if not rows:lines.append('Пока нет бесед, в которых есть бот.')
             await _send(event,'\n'.join(lines),services.settings_config,admin_panel_keyboard(role));return
-        if payload=='promo_menu':
-            if role!='admin':await event.message.answer('Недостаточно прав.');return
-            await event.message.answer('Страница генерации промокодов',attachments=promo_reward_keyboard(role));return
-        if payload.startswith('promo_reward:'):
-            if role!='admin':await event.message.answer('Недостаточно прав.');return
-            kind=payload.split(':',1)[1]
-            if kind=='subscription':await event.message.answer('Выберите срок:',attachments=promo_subscription_keyboard());return
-            if kind=='tokens':services.repository.set_user_state(uid,'promo_token_amount',{'reward_type':'tokens'});await event.message.answer('Введите количество токенов');return
-            await event.message.answer('Неизвестный тип награды.');return
-        if payload.startswith('promo_sub:'):
-            value=payload.split(':',1)[1];data={'reward_type':'subscription'}
-            if value=='unlimited':data['unlimited']=True
-            else:data['subscription_months']=int(value)
-            services.repository.set_user_state(uid,'promo_code',data);await event.message.answer('Введите промокод');return
-        if payload.startswith('promo_usage:'):
-            state=services.repository.get_user_state(uid)
-            if not state or state[0]!='promo_usage':await event.message.answer('Сессия создания промокода не найдена.');return
-            data=state[1];data['usage_type']=payload.split(':',1)[1]
-            if data['usage_type']=='limited':services.repository.set_user_state(uid,'promo_max_uses',data);await event.message.answer('Введите максимальное число использований');return
-            await create_promo_from_state(event,uid,data);return
         if payload.startswith('support_reply:'):
             if not is_support and role!='admin':await event.message.answer('Недостаточно прав.');return
             target=int(payload.split(':',1)[1]);target_name=services.repository.user_display_name(target)

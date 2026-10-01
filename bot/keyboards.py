@@ -60,20 +60,10 @@ def summary_period_keyboard():
 
 def admin_panel_keyboard(role=None):
     return kb([
-        [btn('🎟 Выдать промокод','promo_menu')],
         [btn('📋 Беседы','admin_chats')],
         [btn('↩️ Назад','back')],
     ])
 
-def promo_reward_keyboard(role=None):
-    return kb([
-        [btn('⭐ Подписки','promo_reward:subscription')],
-        [btn('🎟 Токены','promo_reward:tokens')],
-        [btn('↩️ Назад','promo_menu')],
-    ])
-
-def promo_subscription_keyboard():return kb([[btn('Подписка на 1 месяц','promo_sub:1'),btn('Подписка на 3 месяца','promo_sub:3')],[btn('Подписка на 6 месяцев','promo_sub:6'),btn('Вечная подписка','promo_sub:unlimited')],[btn('↩️ Назад','promo_menu')]])
-def promo_usage_keyboard():return kb([[btn('Одноразовый','promo_usage:once')],[btn('Многоразовый','promo_usage:limited')],[btn('Без ограничений','promo_usage:unlimited')],[btn('↩️ Назад','promo_menu')]])
 def subscription_keyboard(price1=99,price3=259,price6=559):return kb([[btn(f'1 месяц — {price1} ₽','sub_tariff:1_month'),btn(f'3 месяца — {price3} ₽','sub_tariff:3_months')],[btn(f'6 месяцев — {price6} ₽','sub_tariff:6_months')],[btn('↩️ Назад','back')]])
 def user_list_keyboard(rows,prefix,back='admin_panel'):
     out=[[btn((' '.join(x for x in (r['first_name'],r['last_name']) if x).strip() or str(r['user_id']))[:40],f'{prefix}:{r["user_id"]}')] for r in rows]
