@@ -270,6 +270,43 @@ class Repository:
         return (row['state'],json.loads(row['data_json'])) if row else None
     def clear_user_state(self,user_id):self.connection.execute("DELETE FROM user_states WHERE user_id=?",(user_id,));self.connection.commit()
 
+    # ---------- support tickets ----------
+    def get_open_support_ticket(self,user_id):
+        return self.connection.execute(
+            "SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY ticket_id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+
+    def create_support_ticket(self,user_id,user_name):
+        now=self.now()
+        cur=self.connection.execute(
+            "INSERT INTO support_tickets(user_id,user_name,status,created_at,updated_at) VALUES(?,?,'open',?,?)",
+            (user_id,user_name,now,now),
+        )
+        self.connection.commit()
+        return self.connection.execute("SELECT * FROM support_tickets WHERE ticket_id=?",(cur.lastrowid,)).fetchone()
+
+    def add_support_ticket_message(self,ticket_id,sender_type,sender_id,body):
+        now=self.now()
+        self.connection.execute(
+            "INSERT INTO support_ticket_messages(ticket_id,sender_type,sender_id,body,created_at) VALUES(?,?,?,?,?)",
+            (ticket_id,sender_type,sender_id,body,now),
+        )
+        self.connection.execute("UPDATE support_tickets SET updated_at=? WHERE ticket_id=? AND status='open'",(now,ticket_id))
+        self.connection.commit()
+
+    def get_support_ticket(self,ticket_id):
+        return self.connection.execute("SELECT * FROM support_tickets WHERE ticket_id=?",(ticket_id,)).fetchone()
+
+    def close_support_ticket(self,ticket_id):
+        now=self.now()
+        cur=self.connection.execute(
+            "UPDATE support_tickets SET status='closed',closed_at=?,updated_at=? WHERE ticket_id=? AND status='open'",
+            (now,now,ticket_id),
+        )
+        self.connection.commit()
+        return cur.rowcount==1
+
     # ---------- promo codes ----------
     @staticmethod
     def normalize_code(code):return ''.join(str(code).split()).upper()

@@ -154,6 +154,30 @@ CREATE TABLE IF NOT EXISTS user_states (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS support_tickets (
+    ticket_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    user_name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user_status
+    ON support_tickets(user_id,status,updated_at);
+
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    sender_type TEXT NOT NULL CHECK(sender_type IN ('user','support')),
+    sender_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(ticket_id) REFERENCES support_tickets(ticket_id)
+);
+CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket
+    ON support_ticket_messages(ticket_id,id);
+
 CREATE TABLE IF NOT EXISTS poll_context (
     poll_id TEXT PRIMARY KEY,
     chat_id INTEGER NOT NULL,

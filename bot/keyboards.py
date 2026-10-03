@@ -32,6 +32,10 @@ def group_added_keyboard():
         [btn('⭐ Оформить подписку','buy_subscription')],
     ])
 
+def group_start_keyboard():
+    """В беседе команда /начать показывает только вход в отчёты."""
+    return kb([[btn('📊 Отчет','summary_menu')]])
+
 def back_keyboard(target='back'):
     """Клавиатура с единственной кнопкой возврата (например, для отмены ввода)."""
     return kb([[btn('↩️ Назад',target)]])
@@ -40,9 +44,16 @@ def cabinet_button_keyboard():
     """Кнопка перехода в личный кабинет (например, после успешной оплаты)."""
     return kb([[btn('👤 Личный кабинет','cabinet')]])
 
-def support_reply_keyboard(user_id):
-    """Кнопка ответа на обращение пользователя (для сотрудника поддержки)."""
-    return kb([[btn('✉️ Ответить',f'support_reply:{user_id}')]])
+def support_reply_keyboard(ticket_id):
+    """Кнопки управления обращением для сотрудника поддержки."""
+    return kb([
+        [btn('✉️ Ответить',f'ticket_reply:{ticket_id}')],
+        [btn('✅ Закрыть тикет',f'ticket_close:{ticket_id}')],
+    ])
+
+def ticket_user_keyboard(ticket_id):
+    """Кнопка закрытия обращения пользователем."""
+    return kb([[btn('✅ Закрыть обращение',f'ticket_user_close:{ticket_id}')]])
 
 def cabinet_keyboard(active=False, role='user'):
     if role=='admin':
