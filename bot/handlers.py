@@ -221,7 +221,7 @@ def register_handlers(dp,services):
         services.repository.upsert_chat(chat_id,chat_type,title)
         if chat_type=='chat':
             try:
-                await event.bot.send_message(chat_id=int(chat_id),text=GROUP_HELP_TEXT,attachments=main_menu(False,'user','chat'))
+                await event.bot.send_message(chat_id=int(chat_id),text=GROUP_HELP_TEXT,attachments=group_added_keyboard())
             except Exception:
                 logger.exception('BOT_ADDED_GREETING_FAILED chat_id=%s',chat_id)
 

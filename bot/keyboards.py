@@ -25,6 +25,13 @@ def private_start_menu(active=False, role='user'):
     """Меню первого сообщения в ЛС."""
     return main_menu(active, role, chat_type='dialog')
 
+def group_added_keyboard():
+    """Минимальное меню приветствия при добавлении бота в беседу."""
+    return kb([
+        [btn('📊 Отчет','summary_menu')],
+        [btn('⭐ Оформить подписку','buy_subscription')],
+    ])
+
 def back_keyboard(target='back'):
     """Клавиатура с единственной кнопкой возврата (например, для отмены ввода)."""
     return kb([[btn('↩️ Назад',target)]])
