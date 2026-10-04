@@ -60,6 +60,12 @@ class Repository:
         self.connection.execute("UPDATE chats SET title=?,updated_at=? WHERE chat_id=?",(title,self.now(),chat_id))
         self.connection.commit()
 
+    def delete_chat(self,chat_id):
+        """Remove a chat from the active chats list without deleting its history."""
+        cur=self.connection.execute("DELETE FROM chats WHERE chat_id=?",(chat_id,))
+        self.connection.commit()
+        return cur.rowcount==1
+
     def save_message(self,message:MessageRecord):
         cur=self.connection.execute("INSERT OR IGNORE INTO messages(max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to) VALUES(?,?,?,?,?,?,?,?)",
             (message.max_message_id,message.chat_id,message.user_id,message.user_name,message.text,message.source,message.timestamp.isoformat(),message.reply_to))
