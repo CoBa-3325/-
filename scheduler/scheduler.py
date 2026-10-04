@@ -40,6 +40,13 @@ class Scheduler:
                     logger.warning('CHAT_CHECK_FAILED chat_id=%s error=%s',chat_id,exc)
 
     async def run(self):
+        # Сразу после запуска проверяем все сохранённые беседы.
+        try:
+            await self.check_chats()
+            self._last_chat_check = datetime.now(timezone.utc)
+        except Exception:
+            logger.exception('CHAT_CHECK_STARTUP_FAILED')
+
         while not self._stop.is_set():
             try:
                 if self.warning_days:
