@@ -14,7 +14,6 @@ def main_menu(active=False, role='user', chat_type='chat'):
     if chat_type=='chat':
         rows.append([btn('📊 Отчет','summary_menu')])
         rows.append([btn('👤 Личный кабинет','cabinet')])
-        rows.append([btn('🎟 Ввести промокод','redeem_promo')])
         if role=='user': rows.append([btn('⭐ Оформить подписку','buy_subscription')])
     else:
         rows.append([btn('⭐ Оформить подписку','buy_subscription')])
