@@ -54,17 +54,16 @@ class Repository:
             "SELECT chat_id,chat_type,title,updated_at FROM chats WHERE chat_type='chat' ORDER BY updated_at DESC"
         ).fetchall()
 
+    def delete_chat(self,chat_id):
+        cur=self.connection.execute("DELETE FROM chats WHERE chat_id=?",(chat_id,))
+        self.connection.commit()
+        return cur.rowcount > 0
+
     def update_chat_title(self,chat_id,title):
         if not title:
             return
         self.connection.execute("UPDATE chats SET title=?,updated_at=? WHERE chat_id=?",(title,self.now(),chat_id))
         self.connection.commit()
-
-    def delete_chat(self,chat_id):
-        """Remove a chat from the active chats list without deleting its history."""
-        cur=self.connection.execute("DELETE FROM chats WHERE chat_id=?",(chat_id,))
-        self.connection.commit()
-        return cur.rowcount==1
 
     def save_message(self,message:MessageRecord):
         cur=self.connection.execute("INSERT OR IGNORE INTO messages(max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to) VALUES(?,?,?,?,?,?,?,?)",

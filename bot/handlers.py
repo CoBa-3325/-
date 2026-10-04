@@ -383,6 +383,15 @@ def register_handlers(dp, services):
             except Exception:
                 logger.exception('BOT_ADDED_GREETING_FAILED chat_id=%s', chat_id)
 
+    @dp.bot_removed()
+    async def bot_removed(event):
+        # MAX сообщает это событие, когда бот удалён из групповой беседы.
+        chat_id = _get(event, 'chat_id')
+        if chat_id is None:
+            return
+        removed = services.repository.delete_chat(chat_id)
+        logger.info('BOT_REMOVED_CHAT_DB_CLEANUP chat_id=%s removed=%s', chat_id, removed)
+
     @dp.chat_title_changed()
     async def chat_title_changed(event):
         chat_id = _get(event, 'chat_id')
