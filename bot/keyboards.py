@@ -33,7 +33,7 @@ def summary_type_keyboard():
 def summary_period_keyboard():
     return kb([
         [btn('За 1 день','summary_period:1'),btn('За 3 дня','summary_period:3')],
-        [btn('За 7 дней','summary_period:7'),btn('За всё время','summary_period:all')],
+        [btn('За 7 дней','summary_period:7'),btn('За 30 дней','summary_period:30')],
         [btn('↩️ Назад','summary_menu')],
     ])
 

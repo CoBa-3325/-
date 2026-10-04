@@ -48,7 +48,7 @@ async def main():
                 except Exception:logger.exception('YooKassa webhook failed');return JSONResponse({'ok':False},status_code=500)
             @app.get('/health')
             async def health():return {'status':'ok'}
-            await bot.subscribe_webhook(url=settings.max_webhook_url,secret=settings.max_webhook_secret,update_types=['message_created','message_callback','message_removed','message_edited','bot_started']);await uvicorn.Server(uvicorn.Config(app,host=settings.max_webhook_host,port=settings.max_webhook_port,log_level='info')).serve()
+            await bot.subscribe_webhook(url=settings.max_webhook_url,secret=settings.max_webhook_secret,update_types=['message_created','message_callback','message_removed','message_edited','bot_started','bot_added']);await uvicorn.Server(uvicorn.Config(app,host=settings.max_webhook_host,port=settings.max_webhook_port,log_level='info')).serve()
         else:
             await dp.start_polling(bot)
     except asyncio.CancelledError:logger.info('MAX bot cancelled')
