@@ -49,7 +49,7 @@ def build_services(settings):
             initial["code"],
         )
 
-    roles = RoleService(repository)
+    roles = RoleService(repository, settings.admin_ids)
 
     gpt = YandexGPT(
         settings.yc_api_key,
