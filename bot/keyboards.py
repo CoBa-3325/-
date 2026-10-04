@@ -29,7 +29,6 @@ def group_added_keyboard():
     """Минимальное меню приветствия при добавлении бота в беседу."""
     return kb([
         [btn('📊 Отчет','summary_menu')],
-        [btn('⭐ Оформить подписку','buy_subscription')],
     ])
 
 def group_start_keyboard():
