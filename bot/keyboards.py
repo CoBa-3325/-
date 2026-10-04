@@ -4,23 +4,62 @@ from maxapi import types
 def kb(rows): return [types.ButtonsPayload(buttons=rows).pack()]
 def btn(text,payload): return {'type':'callback','text':text,'payload':payload}
 
-def main_menu(active=False, role='user'):
-    rows=[[btn('📊 Сводка','summary_menu')],[btn('👤 Личный кабинет','cabinet')],[btn('🎟 Ввести промокод','redeem_promo')]]
-    if role=='user': rows += [[btn('💳 Купить токены','buy_tokens'),btn('⭐ Оформить подписку','buy_subscription')]]
-    if role in ('admin','creator'): rows.append([btn('🛠 Админ-панель','admin_panel')])
+def main_menu(active=False, role='user', chat_type='chat'):
+    """Главное меню.
+
+    В беседах доступен весь функционал, в ЛС — только подписка, а для
+    администраторов дополнительно вход в админ-панель.
+    """
+    rows=[]
+    if chat_type=='chat':
+        rows.append([btn('📊 Отчет','summary_menu')])
+        rows.append([btn('👤 Личный кабинет','cabinet')])
+        rows.append([btn('🎟 Ввести промокод','redeem_promo')])
+        if role=='user': rows.append([btn('⭐ Оформить подписку','buy_subscription')])
+    else:
+        rows.append([btn('⭐ Оформить подписку','buy_subscription')])
+    if role=='admin': rows.append([btn('🛠 Админ-панель','admin_panel')])
     return kb(rows)
 
 def private_start_menu(active=False, role='user'):
-    """Меню первого сообщения в ЛС. Сводка доступна только в групповых чатах."""
-    rows=[[btn('👤 Личный кабинет','cabinet')],[btn('🎟 Ввести промокод','redeem_promo')]]
-    if role=='user':
-        rows += [[btn('💳 Купить токены','buy_tokens'),btn('⭐ Оформить подписку','buy_subscription')]]
-    if role in ('admin','creator'):
-        rows.append([btn('🛠 Админ-панель','admin_panel')])
-    return kb(rows)
+    """Меню первого сообщения в ЛС."""
+    return main_menu(active, role, chat_type='dialog')
+
+def group_added_keyboard():
+    """Минимальное меню приветствия при добавлении бота в беседу."""
+    return kb([
+        [btn('📊 Отчет','summary_menu')],
+        [btn('⭐ Оформить подписку','buy_subscription')],
+    ])
+
+def group_start_keyboard():
+    """В беседе команда /начать показывает только вход в отчёты."""
+    return kb([[btn('📊 Отчет','summary_menu')]])
+
+def back_keyboard(target='back'):
+    """Клавиатура с единственной кнопкой возврата (например, для отмены ввода)."""
+    return kb([[btn('↩️ Назад',target)]])
+
+def cabinet_button_keyboard():
+    """Кнопка перехода в личный кабинет (например, после успешной оплаты)."""
+    return kb([[btn('👤 Личный кабинет','cabinet')]])
+
+def support_reply_keyboard(ticket_id):
+    """Кнопки управления обращением для сотрудника поддержки."""
+    return kb([
+        [btn('✉️ Ответить',f'ticket_reply:{ticket_id}')],
+        [btn('✅ Закрыть тикет',f'ticket_close:{ticket_id}')],
+    ])
+
+def ticket_user_keyboard(ticket_id):
+    """Кнопка закрытия обращения пользователем."""
+    return kb([[btn('✅ Закрыть обращение',f'ticket_user_close:{ticket_id}')]])
 
 def cabinet_keyboard(active=False, role='user'):
-    rows=[[btn('⭐ Оформить подписку','buy_subscription'),btn('💳 Купить токены','buy_tokens')] if role=='user' else [btn('🛠 Админ-панель','admin_panel')], [btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
+    if role=='admin':
+        rows=[[btn('🛠 Админ-панель','admin_panel')],[btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
+    else:
+        rows=[[btn('⭐ Оформить подписку','buy_subscription')],[btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
     return kb(rows)
 
 def summary_type_keyboard():
@@ -37,20 +76,12 @@ def summary_period_keyboard():
         [btn('↩️ Назад','summary_menu')],
     ])
 
-def admin_panel_keyboard(role):
-    rows=[[btn('🎟 Выдать промокод','promo_menu')]]
-    if role=='creator':rows += [[btn('👥 Создатели','creators')],[btn('🗑 Снять администратора','admins')],[btn('🚪 Выйти из роли создателя','creator_exit')]]
-    rows += [[btn('↩️ Назад','back')]]
-    return kb(rows)
+def admin_panel_keyboard(role=None):
+    return kb([
+        [btn('📋 Беседы','admin_chats')],
+        [btn('↩️ Назад','back')],
+    ])
 
-def promo_reward_keyboard(role):
-    rows=[[btn('⭐ Подписки','promo_reward:subscription')],[btn('🎟 Токены','promo_reward:tokens')],[btn('👑 Администраторы','promo_reward:admin')]]
-    if role=='creator':rows.append([btn('👑 Создатели','promo_reward:creator')])
-    rows.append([btn('↩️ Назад','admin_panel')]);return kb(rows)
-
-def promo_subscription_keyboard():return kb([[btn('Подписка на 1 месяц','promo_sub:1'),btn('Подписка на 3 месяца','promo_sub:3')],[btn('Подписка на 6 месяцев','promo_sub:6'),btn('Вечная подписка','promo_sub:unlimited')],[btn('↩️ Назад','promo_menu')]])
-def promo_usage_keyboard():return kb([[btn('Одноразовый','promo_usage:once')],[btn('Многоразовый','promo_usage:limited')],[btn('Без ограничений','promo_usage:unlimited')],[btn('↩️ Назад','promo_menu')]])
-def token_buy_keyboard(price=300):return kb([[btn(f'Купить 10 токенов — {price} ₽','token_buy:10')],[btn('↩️ Назад','back')]])
 def subscription_keyboard(price1=99,price3=259,price6=559):return kb([[btn(f'1 месяц — {price1} ₽','sub_tariff:1_month'),btn(f'3 месяца — {price3} ₽','sub_tariff:3_months')],[btn(f'6 месяцев — {price6} ₽','sub_tariff:6_months')],[btn('↩️ Назад','back')]])
 def user_list_keyboard(rows,prefix,back='admin_panel'):
     out=[[btn((' '.join(x for x in (r['first_name'],r['last_name']) if x).strip() or str(r['user_id']))[:40],f'{prefix}:{r["user_id"]}')] for r in rows]

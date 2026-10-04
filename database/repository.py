@@ -48,6 +48,18 @@ class Repository:
             FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE m.user_id=? AND c.chat_type='chat'
             ORDER BY c.updated_at DESC""",(user_id,)).fetchall()
 
+    def list_group_chats(self):
+        """All group chats the bot knows about, newest activity first."""
+        return self.connection.execute(
+            "SELECT chat_id,chat_type,title,updated_at FROM chats WHERE chat_type='chat' ORDER BY updated_at DESC"
+        ).fetchall()
+
+    def update_chat_title(self,chat_id,title):
+        if not title:
+            return
+        self.connection.execute("UPDATE chats SET title=?,updated_at=? WHERE chat_id=?",(title,self.now(),chat_id))
+        self.connection.commit()
+
     def save_message(self,message:MessageRecord):
         cur=self.connection.execute("INSERT OR IGNORE INTO messages(max_message_id,chat_id,user_id,user_name,text,source,timestamp,reply_to) VALUES(?,?,?,?,?,?,?,?)",
             (message.max_message_id,message.chat_id,message.user_id,message.user_name,message.text,message.source,message.timestamp.isoformat(),message.reply_to))
@@ -257,6 +269,43 @@ class Repository:
         row=self.connection.execute("SELECT * FROM user_states WHERE user_id=?",(user_id,)).fetchone()
         return (row['state'],json.loads(row['data_json'])) if row else None
     def clear_user_state(self,user_id):self.connection.execute("DELETE FROM user_states WHERE user_id=?",(user_id,));self.connection.commit()
+
+    # ---------- support tickets ----------
+    def get_open_support_ticket(self,user_id):
+        return self.connection.execute(
+            "SELECT * FROM support_tickets WHERE user_id=? AND status='open' ORDER BY ticket_id DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+
+    def create_support_ticket(self,user_id,user_name):
+        now=self.now()
+        cur=self.connection.execute(
+            "INSERT INTO support_tickets(user_id,user_name,status,created_at,updated_at) VALUES(?,?,'open',?,?)",
+            (user_id,user_name,now,now),
+        )
+        self.connection.commit()
+        return self.connection.execute("SELECT * FROM support_tickets WHERE ticket_id=?",(cur.lastrowid,)).fetchone()
+
+    def add_support_ticket_message(self,ticket_id,sender_type,sender_id,body):
+        now=self.now()
+        self.connection.execute(
+            "INSERT INTO support_ticket_messages(ticket_id,sender_type,sender_id,body,created_at) VALUES(?,?,?,?,?)",
+            (ticket_id,sender_type,sender_id,body,now),
+        )
+        self.connection.execute("UPDATE support_tickets SET updated_at=? WHERE ticket_id=? AND status='open'",(now,ticket_id))
+        self.connection.commit()
+
+    def get_support_ticket(self,ticket_id):
+        return self.connection.execute("SELECT * FROM support_tickets WHERE ticket_id=?",(ticket_id,)).fetchone()
+
+    def close_support_ticket(self,ticket_id):
+        now=self.now()
+        cur=self.connection.execute(
+            "UPDATE support_tickets SET status='closed',closed_at=?,updated_at=? WHERE ticket_id=? AND status='open'",
+            (now,now,ticket_id),
+        )
+        self.connection.commit()
+        return cur.rowcount==1
 
     # ---------- promo codes ----------
     @staticmethod

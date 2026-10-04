@@ -25,9 +25,7 @@ class Services:pass
 
 def build_services(settings):
     connection=connect(settings.db_path);repository=Repository(connection)
-    initial=repository.ensure_initial_creator_promo()
-    if initial:logger.warning('INITIAL_CREATOR_PROMO_CREATED code=%s',initial['code'])
-    roles=RoleService(repository);gpt=YandexGPT(settings.yc_api_key,settings.yc_folder_id,settings.yandex_gpt_model);summarizer=Summarizer(gpt,settings.max_prompt_chars)
+    roles=RoleService(repository,settings.admin_ids);gpt=YandexGPT(settings.yc_api_key,settings.yc_folder_id,settings.yandex_gpt_model);summarizer=Summarizer(gpt,settings.max_prompt_chars)
     message=MessageService(repository);summary=SummaryService(repository,summarizer);tokens=TokenService(repository,settings.free_tokens_per_user);subscription=SubscriptionService(repository,roles);promotion=PromotionService(repository,settings,roles);cabinet=CabinetService(repository,subscription,tokens,roles);payment=PaymentService(repository,settings,promotion,subscription,tokens);cooldown=CooldownService(repository,settings.request_cooldown_minutes)
     s=Services();s.connection=connection;s.repository=repository;s.message=message;s.summary=summary;s.settings=SettingsService(repository);s.tokens=tokens;s.subscription=subscription;s.promotion=promotion;s.cabinet=cabinet;s.payment=payment;s.roles=roles;s.cooldown=cooldown;s.settings_config=settings;return s
 
@@ -48,7 +46,11 @@ async def main():
                 except Exception:logger.exception('YooKassa webhook failed');return JSONResponse({'ok':False},status_code=500)
             @app.get('/health')
             async def health():return {'status':'ok'}
+<<<<<<< HEAD
             await bot.subscribe_webhook(url=settings.max_webhook_url,secret=settings.max_webhook_secret,update_types=['message_created','message_callback','message_removed','message_edited','bot_started','bot_added']);await uvicorn.Server(uvicorn.Config(app,host=settings.max_webhook_host,port=settings.max_webhook_port,log_level='info')).serve()
+=======
+            await bot.subscribe_webhook(url=settings.max_webhook_url,secret=settings.max_webhook_secret,update_types=['message_created','message_callback','message_removed','message_edited','bot_started','bot_added','chat_title_changed']);await uvicorn.Server(uvicorn.Config(app,host=settings.max_webhook_host,port=settings.max_webhook_port,log_level='info')).serve()
+>>>>>>> baa517713ccf39cb46f2b5b5f1570d21558bd073
         else:
             await dp.start_polling(bot)
     except asyncio.CancelledError:logger.info('MAX bot cancelled')
