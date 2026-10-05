@@ -64,7 +64,7 @@ def summary_type_keyboard():
     return kb([
         [btn('📊 Общее','summary_type:general')],
         [btn('👥 По конкретным людям','summary_type:people')],
-        [btn('↩️ Назад','back')],
+        [btn('↩️ Назад','summary_cancel')],
     ])
 
 def summary_period_keyboard():

@@ -33,12 +33,19 @@ def _chat_type(message):
 
 
 def _user(message, event=None):
-    sender = _get(message, 'sender') or _get(event, 'from_user')
+    sender = _get(event, 'from_user') or _get(message, 'sender')
     uid = _get(sender, 'user_id')
     first = _get(sender, 'first_name', '')
     last = _get(sender, 'last_name', '')
     name = ' '.join(x for x in (first, last) if x).strip() or str(uid or 'Пользователь')
     return uid, name, first, last
+
+
+def _user_greeting(message, event=None):
+    sender = _get(event, 'from_user') or _get(message, 'sender')
+    _, name, _, _ = _user(message, event)
+    username = _get(sender, 'username')
+    return f'{name} (@{username})' if username else name
 
 
 def _message_meta(event):
@@ -106,6 +113,37 @@ async def _delete_callback_message(event):
     return await _delete_max_message(_get(event, 'bot'), message_id)
 
 
+async def _delete_report_step(event):
+    """Delete the bot's current report-wizard message in a group."""
+    message = _get(event, 'message')
+    sender = _get(message, 'sender')
+    if sender is not None and not _get(sender, 'is_bot', False):
+        logger.warning('REPORT_STEP_DELETE_NOT_BOT_MESSAGE')
+        return False
+    body = _get(message, 'body') or {}
+    message_id = str(_get(body, 'mid') or _get(message, 'message_id') or '')
+    if not message_id:
+        logger.warning('REPORT_STEP_DELETE_NO_MESSAGE_ID')
+        return False
+    return await _delete_max_message(_get(event, 'bot'), message_id)
+
+
+def _is_report_navigation(payload):
+    return (
+        payload in ('summary_menu', 'summary_people_done', 'summary_cancel')
+        or payload.startswith('summary_type:')
+        or payload.startswith('summary_period:')
+        or payload.startswith('summary_people_toggle:')
+        or payload.startswith('summary_people_period:')
+    )
+
+
+def _is_bot_added_greeting(message):
+    body = _get(message, 'body') or {}
+    text = str(_get(body, 'text') or '').strip()
+    return text == GROUP_HELP_TEXT.strip()
+
+
 def _role(services, uid):
     return services.roles.get_role(uid)
 
@@ -154,23 +192,23 @@ def register_handlers(dp, services):
             ),
         )
 
-    async def generate_summary(event, uid, chat_id, days, source_user_message_id=None):
+    async def generate_summary(event, uid, chat_id, days, greeting, source_user_message_id=None):
         remaining = services.cooldown.remaining_seconds(chat_id)
         if remaining:
-            await event.message.answer(f'До следующего запроса осталось {math.ceil(remaining / 60)} минут')
+            await event.message.answer(f'{greeting}, подождите ещё {math.ceil(remaining / 60)} минут до следующего запроса.')
             return
         if not services.cooldown.acquire(chat_id):
             remaining = services.cooldown.remaining_seconds(chat_id)
             await event.message.answer(
-                f'До следующего запроса осталось {math.ceil(remaining / 60)} минут'
-                if remaining else 'В этом чате уже выполняется запрос.'
+                f'{greeting}, подождите ещё {math.ceil(remaining / 60)} минут до следующего запроса.'
+                if remaining else f'{greeting}, в этом чате уже выполняется запрос.'
             )
             return
         period = period_for_interval('custom', custom_days=days)
         rows = services.repository.get_messages(chat_id, period.start, period.end)
         if not rows:
             services.cooldown.release(chat_id)
-            await event.message.answer('За выбранный период сообщений не найдено.')
+            await event.message.answer(f'{greeting}, за выбранный период сообщений не найдено.')
             return
         unlimited = services.subscription.is_active(uid)
         operation = None
@@ -178,7 +216,7 @@ def register_handlers(dp, services):
             operation = services.tokens.deduct_for_llm(uid, chat_id)
             if operation is None:
                 services.cooldown.release(chat_id)
-                await event.message.answer('Недостаточно токенов для создания сводки.')
+                await event.message.answer(f'{greeting}, недостаточно токенов для создания сводки.')
                 return
         llm_succeeded = False
         try:
@@ -188,43 +226,43 @@ def register_handlers(dp, services):
             services.cooldown.activate(chat_id)
             await _send(
                 event,
-                f'📊 Отчет за {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
+                f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n'
+                + f'📊 Отчёт за {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
                 + '\n\n' + result,
                 services.settings_config,
             )
-            if source_user_message_id:
-                await _delete_max_message(event.bot, source_user_message_id)
+            # Команду пользователя /отчет не удаляем.
         except Exception:
             if operation and not llm_succeeded:
                 services.tokens.refund(uid, chat_id, operation)
             services.cooldown.release(chat_id)
             logger.exception('LLM_REQUEST_FAILED chat_id=%s user_id=%s', chat_id, uid)
-            await event.message.answer('Не удалось сформировать отчёт. Токен возвращён, если он был списан.')
+            await event.message.answer(f'{greeting}, не удалось сформировать отчёт. Токен возвращён, если он был списан.')
 
-    async def generate_summary_custom(event, uid, chat_id, start, end, title, user_ids=None,
+    async def generate_summary_custom(event, uid, chat_id, start, end, title, greeting, user_ids=None,
                                       source_user_message_id=None):
         remaining = services.cooldown.remaining_seconds(chat_id)
         if remaining:
-            await event.message.answer(f'До следующего запроса осталось {math.ceil(remaining / 60)} минут')
+            await event.message.answer(f'{greeting}, подождите ещё {math.ceil(remaining / 60)} минут до следующего запроса.')
             return
         if not services.cooldown.acquire(chat_id):
             remaining = services.cooldown.remaining_seconds(chat_id)
             await event.message.answer(
-                f'До следующего запроса осталось {math.ceil(remaining / 60)} минут'
-                if remaining else 'В этом чате уже выполняется запрос.'
+                f'{greeting}, подождите ещё {math.ceil(remaining / 60)} минут до следующего запроса.'
+                if remaining else f'{greeting}, в этом чате уже выполняется запрос.'
             )
             return
         rows = services.repository.get_messages(chat_id, start, end, user_ids=user_ids)
         if not rows:
             services.cooldown.release(chat_id)
-            await event.message.answer('За выбранный период сообщений нет.')
+            await event.message.answer(f'{greeting}, за выбранный период сообщений нет.')
             return
         op = None
         if not services.subscription.is_active(uid):
             op = services.tokens.deduct_for_llm(uid, chat_id)
             if op is None:
                 services.cooldown.release(chat_id)
-                await event.message.answer('Токены закончились.')
+                await event.message.answer(f'{greeting}, недостаточно токенов для создания сводки.')
                 return
         llm_succeeded = False
         try:
@@ -232,15 +270,14 @@ def register_handlers(dp, services):
             llm_succeeded = True
             services.summary.save_run(chat_id, start, end, result)
             services.cooldown.activate(chat_id)
-            await _send(event, f'📊 Отчет за {title}\n\n{result}', services.settings_config)
-            if source_user_message_id:
-                await _delete_max_message(event.bot, source_user_message_id)
+            await _send(event, f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n📊 Отчёт за {title}\n\n{result}', services.settings_config)
+            # Команду пользователя /отчет не удаляем.
         except Exception:
             if op and not llm_succeeded:
                 services.tokens.refund(uid, chat_id, op)
             services.cooldown.release(chat_id)
             logger.exception('LLM_REQUEST_FAILED chat_id=%s user_id=%s', chat_id, uid)
-            await event.message.answer('Не удалось сформировать отчёт. Токен возвращён, если он был списан.')
+            await event.message.answer(f'{greeting}, не удалось сформировать отчёт. Токен возвращён, если он был списан.')
 
     async def send_ticket_update(bot, ticket, sender_type, text):
         """Deliver a ticket message to the other side and persist its history."""
@@ -454,12 +491,24 @@ def register_handlers(dp, services):
             if ctype != 'chat':
                 # В ЛС и каналах отчёты недоступны и никаких сообщений не отправляется.
                 return
-            # Само сообщение пользователя /отчет удаляем только после
-            # успешного формирования отчёта. До этого оно остаётся в чате.
+            greeting = _user_greeting(message, event)
+            remaining = services.cooldown.remaining_seconds(chat_id)
+            if remaining:
+                await event.message.answer(
+                    f'Уважаемый {greeting}, подождите ещё {math.ceil(remaining / 60)} минут до следующего запроса.'
+                )
+                return
             services.repository.set_user_state(
-                uid, 'summary_origin', {'message_id': mid, 'chat_id': int(chat_id)}
+                uid, 'summary_origin', {
+                    'message_id': mid,
+                    'chat_id': int(chat_id),
+                    'greeting': greeting,
+                }
             )
-            await event.message.answer('Какой отчёт сформировать?', attachments=summary_type_keyboard())
+            await event.message.answer(
+                f'Уважаемый {greeting}, какой отчёт сформировать?',
+                attachments=summary_type_keyboard(),
+            )
             return
         if text.startswith('/'):
             return
@@ -501,9 +550,15 @@ def register_handlers(dp, services):
             await event.answer()
         role = _role(services, uid)
         is_support = uid == services.settings_config.support_user_id
-        # Любой переход по inline-кнопке заменяет старое СООБЩЕНИЕ БОТА новым.
-        # Сообщение-обращение в поддержку оставляем, чтобы был виден контекст.
-        if not payload.startswith(('support_reply:', 'ticket_reply:')):
+        # Удаляем только сообщения с шагами мастера отчёта в группах.
+        # Остальные экраны и приветствие при добавлении бота не затрагиваем.
+        if (
+            _chat_type(message) == 'chat'
+            and _is_report_navigation(payload)
+            and not (payload == 'summary_menu' and _is_bot_added_greeting(message))
+        ):
+            await _delete_report_step(event)
+        elif not payload.startswith(('support_reply:', 'ticket_reply:')):
             await _delete_callback_message(event)
 
         if payload == 'cabinet':
@@ -517,6 +572,8 @@ def register_handlers(dp, services):
         if payload == 'back':
             # Отмена любого незавершённого ввода (например, промокода или поддержки).
             services.repository.clear_user_state(uid)
+            if _chat_type(message) == 'chat':
+                return
             await event.message.answer(
                 'Главное меню:',
                 attachments=main_menu(services.subscription.is_active(uid), role, _chat_type(message)),
@@ -526,13 +583,42 @@ def register_handlers(dp, services):
             if _chat_type(message) != 'chat':
                 await event.message.answer('Отчёты доступны только в беседах.')
                 return
-            await event.message.answer('Какой отчёт сформировать?', attachments=summary_type_keyboard())
+            greeting = _user_greeting(message, event)
+            chat_id = _get(_get(message, 'recipient'), 'chat_id')
+            if chat_id is not None:
+                services.repository.set_user_state(
+                    uid, 'summary_origin', {'message_id': None, 'chat_id': int(chat_id), 'greeting': greeting}
+                )
+            await event.message.answer(
+                f'Уважаемый {greeting}, какой отчёт сформировать?',
+                attachments=summary_type_keyboard(),
+            )
+            return
+        if payload == 'summary_cancel':
+            if _chat_type(message) != 'chat':
+                return
+            services.repository.clear_user_state(uid)
+            greeting = _user_greeting(message, event)
+            await event.message.answer(
+                f'Уважаемый {greeting}, какой отчёт сформировать?',
+                attachments=summary_type_keyboard(),
+            )
             return
         if payload == 'summary_type:general':
             if _chat_type(message) != 'chat':
                 await event.message.answer('Отчёты доступны только в беседах.')
                 return
-            await event.message.answer('За какой срок сформировать общий отчёт?', attachments=summary_period_keyboard())
+            greeting = _user_greeting(message, event)
+            origin = services.repository.get_user_state(uid)
+            if not origin or origin[0] != 'summary_origin':
+                chat_id = _get(_get(message, 'recipient'), 'chat_id')
+                services.repository.set_user_state(
+                    uid, 'summary_origin', {'message_id': None, 'chat_id': int(chat_id), 'greeting': greeting}
+                )
+            await event.message.answer(
+                f'Уважаемый {greeting}, за какой срок сформировать общий отчёт?',
+                attachments=summary_period_keyboard(),
+            )
             return
         if payload in ('summary_type:people', 'summary_people'):
             chat_id = _get(_get(message, 'recipient'), 'chat_id')
@@ -545,12 +631,13 @@ def register_handlers(dp, services):
                 return
             origin = services.repository.get_user_state(uid)
             origin_id = origin[1].get('message_id') if origin and origin[0] == 'summary_origin' else None
+            greeting = origin[1].get('greeting', _user_greeting(message, event)) if origin else _user_greeting(message, event)
             services.repository.set_user_state(
                 uid, 'summary_people',
-                {'chat_id': int(chat_id), 'selected': [], 'source_user_message_id': origin_id},
+                {'chat_id': int(chat_id), 'selected': [], 'source_user_message_id': origin_id, 'greeting': greeting},
             )
             await event.message.answer(
-                'Выберите одного или нескольких участников:',
+                f'Уважаемый {greeting}, выберите одного или нескольких участников:',
                 attachments=summary_people_keyboard(authors, []),
             )
             return
@@ -574,7 +661,7 @@ def register_handlers(dp, services):
             services.repository.set_user_state(uid, 'summary_people', data)
             authors = services.repository.list_message_authors(chat_id)
             await event.message.answer(
-                'Выберите одного или нескольких участников:',
+                f'Уважаемый {data.get("greeting", _user_greeting(message, event))}, выберите одного или нескольких участников:',
                 attachments=summary_people_keyboard(authors, data['selected']),
             )
             return
@@ -583,7 +670,10 @@ def register_handlers(dp, services):
             if not state or state[0] != 'summary_people' or not state[1].get('selected'):
                 await event.message.answer('Выберите хотя бы одного участника.')
                 return
-            await event.message.answer('Теперь выберите период:', attachments=summary_people_period_keyboard())
+            await event.message.answer(
+                f'Уважаемый {state[1].get("greeting", _user_greeting(message, event))}, теперь выберите период:',
+                attachments=summary_people_period_keyboard(),
+            )
             return
         if payload.startswith('summary_people_period:'):
             if _chat_type(message) != 'chat':
@@ -611,6 +701,7 @@ def register_handlers(dp, services):
                 title = f'{days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
             await generate_summary_custom(
                 event, uid, chat_id, start, end, title,
+                data.get('greeting', _user_greeting(message, event)),
                 user_ids=selected, source_user_message_id=source_user_message_id,
             )
             return
@@ -638,18 +729,23 @@ def register_handlers(dp, services):
             origin_id = None
             if origin and origin[0] == 'summary_origin':
                 origin_id = origin[1].get('message_id')
+                greeting = origin[1].get('greeting', _user_greeting(message, event))
                 services.repository.clear_user_state(uid)
+            else:
+                greeting = _user_greeting(message, event)
             chat_id = _get(_get(message, 'recipient'), 'chat_id')
+            # Старое сообщение с выбором периода уже удалено; состояние
+            # сохраняет имя и ник пользователя для итогового обращения.
             if val == 'all':
                 period_start = datetime(1970, 1, 1, tzinfo=timezone.utc)
                 await generate_summary_custom(
                     event, uid, chat_id, period_start, datetime.now(timezone.utc),
-                    'всё время', source_user_message_id=origin_id,
+                    'всё время', greeting, source_user_message_id=origin_id,
                 )
                 return
             await generate_summary(
                 event, uid, chat_id, max(1, min(int(val), 3650)),
-                source_user_message_id=origin_id,
+                greeting, source_user_message_id=origin_id,
             )
             return
         if payload == 'admin_panel':
