@@ -269,6 +269,9 @@ def register_handlers(dp, services):
             return False
 
     async def forward_support_message(event, uid, text):
+        if _chat_type(_get(event, 'message')) in ('chat', 'channel'):
+            services.repository.clear_user_state(uid)
+            return False
         message, _, _, _, _ = _message_meta(event)
         _, name, _, _ = _user(message, event)
         ticket = services.repository.get_open_support_ticket(uid)
@@ -418,7 +421,7 @@ def register_handlers(dp, services):
 
         # Persistent input flows survive bot restarts.
         state = services.repository.get_user_state(uid)
-        if state and not text.startswith('/'):
+        if state and not text.startswith('/') and ctype not in ('chat', 'channel'):
             if await handle_state_input(event, uid, text, state):
                 return
 
@@ -682,6 +685,8 @@ def register_handlers(dp, services):
             )
             return
         if payload.startswith('ticket_reply:'):
+            if _chat_type(message) in ('chat', 'channel'):
+                return
             if not is_support and role != 'admin':
                 await event.message.answer('Недостаточно прав.')
                 return
@@ -697,6 +702,8 @@ def register_handlers(dp, services):
             )
             return
         if payload.startswith('ticket_close:'):
+            if _chat_type(message) in ('chat', 'channel'):
+                return
             if not is_support and role != 'admin':
                 await event.message.answer('Недостаточно прав.')
                 return
@@ -715,6 +722,8 @@ def register_handlers(dp, services):
             await event.message.answer(f'Тикет №{ticket_id} закрыт.')
             return
         if payload.startswith('ticket_user_close:'):
+            if _chat_type(message) in ('chat', 'channel'):
+                return
             ticket_id = int(payload.split(':', 1)[1])
             ticket = services.repository.get_support_ticket(ticket_id)
             if not ticket or int(ticket['user_id']) != int(uid):
