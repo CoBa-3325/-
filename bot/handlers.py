@@ -216,7 +216,10 @@ def register_handlers(dp, services):
             operation = services.tokens.deduct_for_llm(uid, chat_id)
             if operation is None:
                 services.cooldown.release(chat_id)
-                await event.message.answer(f'{greeting}, недостаточно токенов для создания сводки.')
+                await event.message.answer(
+                    f'Уважаемый {greeting}, недостаточно отчётов для создания сводки. '
+                    'Перейдите в личные сообщения бота для оформления подписки.'
+                )
                 return
         llm_succeeded = False
         try:
@@ -237,7 +240,7 @@ def register_handlers(dp, services):
                 services.tokens.refund(uid, chat_id, operation)
             services.cooldown.release(chat_id)
             logger.exception('LLM_REQUEST_FAILED chat_id=%s user_id=%s', chat_id, uid)
-            await event.message.answer(f'{greeting}, не удалось сформировать отчёт. Токен возвращён, если он был списан.')
+            await event.message.answer(f'{greeting}, не удалось сформировать отчёт. Лимит отчётов восстановлен, если он был списан.')
 
     async def generate_summary_custom(event, uid, chat_id, start, end, title, greeting, user_ids=None,
                                       source_user_message_id=None):
@@ -262,7 +265,10 @@ def register_handlers(dp, services):
             op = services.tokens.deduct_for_llm(uid, chat_id)
             if op is None:
                 services.cooldown.release(chat_id)
-                await event.message.answer(f'{greeting}, недостаточно токенов для создания сводки.')
+                await event.message.answer(
+                    f'Уважаемый {greeting}, недостаточно отчётов для создания сводки. '
+                    'Перейдите в личные сообщения бота для оформления подписки.'
+                )
                 return
         llm_succeeded = False
         try:
@@ -277,7 +283,7 @@ def register_handlers(dp, services):
                 services.tokens.refund(uid, chat_id, op)
             services.cooldown.release(chat_id)
             logger.exception('LLM_REQUEST_FAILED chat_id=%s user_id=%s', chat_id, uid)
-            await event.message.answer(f'{greeting}, не удалось сформировать отчёт. Токен возвращён, если он был списан.')
+            await event.message.answer(f'{greeting}, не удалось сформировать отчёт. Лимит отчётов восстановлен, если он был списан.')
 
     async def send_ticket_update(bot, ticket, sender_type, text):
         """Deliver a ticket message to the other side and persist its history."""
