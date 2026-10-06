@@ -12,12 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class PaymentService:
-    def __init__(self, repository, settings, promotion_service, subscription_service, token_service):
+    def __init__(self, repository, settings, subscription_service, token_service):
         self.repository = repository
         self.settings = settings
-        self.promotion = promotion_service
         self.subscription = subscription_service
-        self.tokens = token_service
         self.yookassa = YooKassaClient(settings.yookassa_shop_id, settings.yookassa_secret_key)
 
     def _price(self, product, tariff):
@@ -32,11 +30,11 @@ class PaymentService:
         raise ValueError('unknown product/tariff')
 
     async def create_order(self, user_id, product, tariff, chat_id=None):
-        original, tokens, months = self._price(product, tariff)
+        original, token_amount, months = self._price(product, tariff)
         order_id = f'order_{uuid.uuid4().hex}'
         now = self.repository.now()
         row = (
-            order_id, user_id, None, product, tariff, chat_id, tokens, months,
+            order_id, user_id, None, product, tariff, chat_id, token_amount, months,
             original, original, 'pending', now, now, None,
         )
         self.repository.create_order(row)
@@ -107,8 +105,8 @@ class PaymentService:
         end = base + timedelta(days=30 * order['subscription_months'])
         result = self.repository.fulfill_order(
             order['order_id'],
-            subscription_start=start,
-            subscription_end=end,
+            subscription_start=start, subscription_end=end,
+            token_amount=0,
         )
 
         logger.info(

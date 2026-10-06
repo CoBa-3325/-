@@ -8,15 +8,15 @@ class CabinetService:
         role=self.role_service.get_role(user_id) if self.role_service else 'user'
         lines=[f'Добро пожаловать, {self.repository.user_display_name(user_id)}','']
         if role=='admin':
-            lines += ['Срок подписки: ∞','Отчёты: ∞']
+            lines += ['Подписка: без ограничений']
         elif self.subscription_service.is_unlimited(user_id):
-            lines += ['Срок подписки: ∞','Отчёты: ∞']
+            lines += ['Подписка: без ограничений']
         else:
-            balance=self.token_service.balance(user_id)
-            lines.append(f'У вас осталось отчётов: {balance}')
             end=self.subscription_service.active_until(user_id)
             if end:
-                lines.append(f'Дата окончания подписки {end.astimezone(timezone.utc).strftime("%d.%m.%Y")}')
+                lines.append(f'Подписка действует до {end.astimezone(timezone.utc).strftime("%d.%m.%Y")}')
             else:
-                lines.append('У вас не оформлена подписка')
+                lines.append('Подписка не оформлена или срок её действия закончился.')
+            balance=self.token_service.balance(user_id)
+            lines.append(f'Осталось бесплатных отчётов: {balance}')
         return '\n'.join(lines)

@@ -17,7 +17,6 @@ from services.settings_service import SettingsService
 from services.summary_service import SummaryService
 from services.token_service import TokenService
 from services.subscription_service import SubscriptionService
-from services.promotion_service import PromotionService
 from services.cabinet_service import CabinetService
 from services.payment_service import PaymentService
 from services.role_service import RoleService
@@ -40,14 +39,6 @@ class Services:
 def build_services(settings):
     connection = connect(settings.db_path)
     repository = Repository(connection)
-
-    initial = repository.ensure_initial_creator_promo()
-
-    if initial:
-        logger.warning(
-            "INITIAL_CREATOR_PROMO_CREATED code=%s",
-            initial["code"],
-        )
 
     roles = RoleService(repository, settings.admin_ids)
 
@@ -79,12 +70,6 @@ def build_services(settings):
         roles,
     )
 
-    promotion = PromotionService(
-        repository,
-        settings,
-        roles,
-    )
-
     cabinet = CabinetService(
         repository,
         subscription,
@@ -95,7 +80,6 @@ def build_services(settings):
     payment = PaymentService(
         repository,
         settings,
-        promotion,
         subscription,
         tokens,
     )
@@ -114,7 +98,6 @@ def build_services(settings):
     services.settings = SettingsService(repository)
     services.tokens = tokens
     services.subscription = subscription
-    services.promotion = promotion
     services.cabinet = cabinet
     services.payment = payment
     services.roles = roles

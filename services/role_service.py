@@ -2,7 +2,7 @@
 
 Administrators are configured through the ADMIN_IDS environment variable and
 identified by user ID. There is a single elevated role ("admin") with full
-access; the legacy DB-backed roles and role promo codes are no longer used.
+    access; legacy database-backed role grants are no longer used.
 """
 from __future__ import annotations
 import logging

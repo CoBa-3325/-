@@ -1,6 +1,6 @@
 """Repository and transactional operations for the bot."""
 from __future__ import annotations
-import json, secrets, sqlite3, string, uuid
+import json, sqlite3, uuid
 from datetime import datetime, timezone
 from  schemas.message import MessageRecord
 from  schemas.settings import ChatSettings
@@ -168,7 +168,7 @@ class Repository:
             now=self.now()
             row=self.connection.execute("""SELECT id FROM token_grants WHERE user_id=? AND remaining_amount>0
                 AND (expires_at IS NULL OR expires_at>?)
-                ORDER BY CASE token_type WHEN 'subscription' THEN 1 WHEN 'promo' THEN 2 WHEN 'trial' THEN 3 WHEN 'purchased' THEN 4 ELSE 9 END,
+                ORDER BY CASE token_type WHEN 'subscription' THEN 1 WHEN 'trial' THEN 2 WHEN 'purchased' THEN 3 ELSE 9 END,
                          CASE WHEN expires_at IS NULL THEN 1 ELSE 0 END, expires_at, id""",(user_id,now)).fetchone()
             if row is None:
                 self.connection.rollback(); return False
@@ -197,8 +197,6 @@ class Repository:
 
     # ---------- subscriptions ----------
     def get_subscription(self,user_id):return self.connection.execute("SELECT * FROM subscriptions WHERE user_id=?",(user_id,)).fetchone()
-    def has_unlimited_promo_subscription(self,user_id):
-        row=self.connection.execute("SELECT 1 FROM subscriptions WHERE user_id=? AND is_unlimited_subscription=1 AND source='promo'",(user_id,)).fetchone(); return row is not None
     def get_subscription_status(self,user_id,now=None):
         now=now or datetime.now(timezone.utc); row=self.connection.execute("SELECT ends_at,is_unlimited_subscription FROM subscriptions WHERE user_id=?",(user_id,)).fetchone()
         if not row or row['is_unlimited_subscription'] or not row['ends_at']: return None
@@ -235,7 +233,6 @@ class Repository:
                 self.connection.execute("""INSERT INTO subscriptions(user_id,started_at,ends_at,is_unlimited_subscription,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?)
                     ON CONFLICT(user_id) DO UPDATE SET started_at=excluded.started_at,ends_at=excluded.ends_at,is_unlimited_subscription=0,source='paid',updated_at=excluded.updated_at""",(row['user_id'],subscription_start.isoformat(),subscription_end.isoformat(),0,'paid',now,now))
                 self.connection.execute("UPDATE users SET subscription_start=?,subscription_end=?,is_unlimited_subscription=0,updated_at=? WHERE user_id=?",(subscription_start.isoformat(),subscription_end.isoformat(),now,row['user_id']))
-                self.connection.execute("INSERT INTO token_grants(user_id,amount,token_type,expires_at,remaining_amount,source_id,created_at) VALUES(?,?,?,?,?,?,?)",(row['user_id'],row['subscription_months']*30,'subscription',subscription_end.isoformat(),row['subscription_months']*30,f'payment:{order_id}:subscription_tokens',now))
             self.connection.commit();return True
         except Exception:
             self.connection.rollback();raise
@@ -311,97 +308,6 @@ class Repository:
         )
         self.connection.commit()
         return cur.rowcount==1
-
-    # ---------- promo codes ----------
-    @staticmethod
-    def normalize_code(code):return ''.join(str(code).split()).upper()
-    def create_promo(self,*,code,usage_type,reward_type,created_by,max_uses=None,token_amount=0,subscription_months=0,is_unlimited_subscription=False,admin_role=None,expires_at=None):
-        code=self.normalize_code(code)
-        if not code: raise ValueError('empty promo code')
-        now=self.now()
-        self.connection.execute("INSERT INTO promo_codes(code,usage_type,max_uses,used_count,reward_type,token_amount,subscription_months,is_unlimited_subscription,admin_role,expires_at,is_active,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (code,usage_type,max_uses,0,reward_type,token_amount,subscription_months,int(is_unlimited_subscription),admin_role,expires_at,1,created_by,now,now));self.connection.commit();return self.get_promo(code)
-    def get_promo(self,code):return self.connection.execute("SELECT * FROM promo_codes WHERE code=?",(self.normalize_code(code),)).fetchone()
-    def list_promo_usages(self,user_id):return self.connection.execute("SELECT * FROM promo_code_usages WHERE user_id=? ORDER BY used_at DESC",(user_id,)).fetchall()
-    def redeem_promo(self,user_id,code,role_service=None,subscription_service=None):
-        """Redeem a promo atomically, including use-limit increment and reward."""
-        code=self.normalize_code(code); now=self.now(); self.connection.execute('BEGIN IMMEDIATE')
-        try:
-            p=self.connection.execute("SELECT * FROM promo_codes WHERE code=? AND is_active=1",(code,)).fetchone()
-            if not p or (p['expires_at'] and p['expires_at']<=now):self.connection.rollback();return None,'Промокод недействителен или уже использован'
-            if p['usage_type']=='once' and p['used_count']>=1:self.connection.rollback();return None,'Промокод недействителен или уже использован'
-            if p['usage_type']=='limited' and p['used_count']>=p['max_uses']:self.connection.rollback();return None,'Промокод недействителен или уже использован'
-            if self.connection.execute("SELECT 1 FROM promo_code_usages WHERE promo_code_id=? AND user_id=?",(p['id'],user_id)).fetchone():self.connection.rollback();return None,'Промокод недействителен или уже использован'
-            if p['reward_type']=='role':
-                target=p['admin_role']; current=self.get_role(user_id)
-                if target=='creator' and current!='user':self.connection.rollback();return None,'Промокод недействителен или уже использован'
-                if target=='admin' and current!='user':self.connection.rollback();return None,'Промокод недействителен или уже использован'
-                self.connection.execute("UPDATE users SET role=?,updated_at=? WHERE user_id=? AND role='user'",(target,now,user_id))
-                if self.connection.execute("SELECT changes()").fetchone()[0]!=1:self.connection.rollback();return None,'Промокод недействителен или уже использован'
-                amount=0
-            elif p['reward_type']=='tokens':
-                self.connection.execute("INSERT INTO token_grants(user_id,amount,token_type,expires_at,remaining_amount,source_id,created_at) VALUES(?,?,?,?,?,?,?)",(user_id,p['token_amount'],'promo',p['expires_at'],p['token_amount'],f"promo:{p['id']}:{user_id}",now)); amount=p['token_amount']
-            else:
-                if p['is_unlimited_subscription']:
-                    self.connection.execute("INSERT INTO subscriptions(user_id,started_at,ends_at,is_unlimited_subscription,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET started_at=excluded.started_at,ends_at=NULL,is_unlimited_subscription=1,source='promo',updated_at=excluded.updated_at",(user_id,now,'9999-12-31T23:59:59+00:00',1,'promo',now,now))
-                else:
-                    row=self.connection.execute("SELECT * FROM subscriptions WHERE user_id=?",(user_id,)).fetchone()
-                    from datetime import timedelta
-                    current_end=datetime.fromisoformat(row['ends_at']) if row and row['ends_at'] and not row['is_unlimited_subscription'] else datetime.fromisoformat(now)
-                    base=current_end if current_end>datetime.fromisoformat(now) else datetime.fromisoformat(now)
-                    end=base+timedelta(days=30*p['subscription_months'])
-                    self.connection.execute("INSERT INTO subscriptions(user_id,started_at,ends_at,is_unlimited_subscription,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET started_at=excluded.started_at,ends_at=excluded.ends_at,is_unlimited_subscription=0,source='promo',updated_at=excluded.updated_at",(user_id,now,end.isoformat(),0,'promo',now,now))
-                    self.connection.execute("INSERT INTO token_grants(user_id,amount,token_type,expires_at,remaining_amount,source_id,created_at) VALUES(?,?,?,?,?,?,?)",(user_id,p['subscription_months']*30,'subscription',end.isoformat(),p['subscription_months']*30,f"promo:{p['id']}:{user_id}:subscription_tokens",now))
-                amount=p['subscription_months']
-            self.connection.execute("INSERT INTO promo_code_usages(promo_code_id,user_id,reward_type,reward_amount,used_at) VALUES(?,?,?,?,?)",(p['id'],user_id,p['reward_type'],amount,now))
-            self.connection.execute("UPDATE promo_codes SET used_count=used_count+1,updated_at=? WHERE id=?",(now,p['id']))
-            self.connection.commit(); return p,None
-        except Exception:
-            self.connection.rollback(); raise
-
-    def ensure_initial_creator_promo(self):
-        # При первой инициализации создаётся одноразовый промокод
-        # именно на роль creator.
-        row=self.connection.execute(
-            "SELECT * FROM promo_codes "
-            "WHERE code LIKE 'INITIAL-CREATOR-%' LIMIT 1"
-        ).fetchone()
-        if row:
-            return None
-
-        # Если база уже была инициализирована старой версией,
-        # переводим неиспользованный стартовый промокод на creator.
-        legacy=self.connection.execute(
-            "SELECT * FROM promo_codes "
-            "WHERE code LIKE 'INITIAL-%' "
-            "AND reward_type='role' AND admin_role='admin' "
-            "ORDER BY id LIMIT 1"
-        ).fetchone()
-        if legacy and legacy['used_count']==0:
-            self.connection.execute(
-                "UPDATE promo_codes "
-                "SET admin_role='creator', "
-                "updated_at=? WHERE id=?",
-                (self.now(), legacy['id'])
-            )
-            self.connection.commit()
-            return self.get_promo(legacy['code'])
-
-        alphabet=string.ascii_uppercase+string.digits
-        while True:
-            code='INITIAL-CREATOR-'+''.join(
-                secrets.choice(alphabet) for _ in range(24)
-            )
-            try:
-                return self.create_promo(
-                    code=code,
-                    usage_type='once',
-                    reward_type='role',
-                    admin_role='creator',
-                    created_by=0,
-                )
-            except sqlite3.IntegrityError:
-                continue
 
     # ---------- polls ----------
     def record_poll(self,poll_id,chat_id,question,data,total_votes):

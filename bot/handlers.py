@@ -290,7 +290,7 @@ def register_handlers(dp, services):
         ticket_id = int(ticket['ticket_id'])
         if sender_type == 'user':
             recipient = int(services.settings_config.support_user_id)
-            label = '📩 Новое сообщение в тикете'
+            label = '📩 Новый запрос в поддержку'
             sender_id = int(ticket['user_id'])
             keyboard = support_reply_keyboard(ticket_id)
         else:
@@ -320,31 +320,28 @@ def register_handlers(dp, services):
         ticket = services.repository.get_open_support_ticket(uid)
         if ticket is None:
             ticket = services.repository.create_support_ticket(uid, name)
-            is_new = True
-        else:
-            is_new = False
         if not await send_ticket_update(event.bot, ticket, 'user', text):
             await event.message.answer(
-                'Не удалось передать сообщение в поддержку. Попробуйте позже; тикет остаётся открытым.'
+                'Не удалось передать сообщение в поддержку. Попробуйте позже.'
             )
             return
-        verb = 'создан' if is_new else 'обновлён'
         await event.message.answer(
-            f'✅ Тикет №{ticket["ticket_id"]} {verb}. Ответ поддержки придёт сюда. '
-            'Пока тикет открыт, просто отправляйте сюда новые сообщения.'
+            f'Ваш запрос {ticket["ticket_id"]} передан в поддержку. '
+            'Пока запрос открыт Вы можете писать сообщения с предложениями или описанием проблемы. '
+            'Поддержка ответит Вам в ближайшее время.'
         )
 
     async def deliver_support_reply(event, uid, ticket_id, text):
         ticket = services.repository.get_support_ticket(ticket_id)
         if not ticket or ticket['status'] != 'open':
             services.repository.clear_user_state(uid)
-            await event.message.answer('Тикет уже закрыт или не найден.')
+            await event.message.answer('Обращение уже закрыто или не найдено.')
             return
         if await send_ticket_update(event.bot, ticket, 'support', text):
             services.repository.clear_user_state(uid)
-            await event.message.answer(f'✅ Ответ отправлен в тикет №{ticket_id}.')
+            await event.message.answer(f'✅ Ответ отправлен по запросу №{ticket_id}.')
         else:
-            await event.message.answer('Не удалось доставить ответ. Тикет остался открыт.')
+            await event.message.answer('Не удалось доставить ответ. Запрос остаётся открытым.')
 
     async def handle_state_input(event, uid, text, state):
         name, data = state
@@ -354,18 +351,6 @@ def register_handlers(dp, services):
             return True
         if name == 'support_reply':
             await deliver_support_reply(event, uid, int(data['ticket_id']), text)
-            return True
-        if name == 'redeem_promo':
-            p = services.promotion.redeem(uid, text)
-            services.repository.clear_user_state(uid)
-            await event.message.answer(
-                'Промокод успешно активирован.' if p else 'Промокод недействителен или уже использован',
-                attachments=main_menu(
-                    services.subscription.is_active(uid),
-                    _role(services, uid),
-                    _chat_type(_get(event, 'message')),
-                ),
-            )
             return True
         return False
 
@@ -570,18 +555,16 @@ def register_handlers(dp, services):
         if payload == 'cabinet':
             await event.message.answer(
                 services.cabinet.render(uid),
-                attachments=_non_report_attachments(
-                    event, cabinet_keyboard(services.subscription.is_active(uid), role)
-                ),
+                attachments=cabinet_keyboard(services.subscription.is_active(uid), role),
             )
             return
         if payload == 'back':
-            # Отмена любого незавершённого ввода (например, промокода или поддержки).
+            # Отмена незавершённого ввода.
             services.repository.clear_user_state(uid)
             if _chat_type(message) == 'chat':
                 return
             await event.message.answer(
-                'Главное меню:',
+                GROUP_HELP_TEXT if _chat_type(message) == 'chat' else PRIVATE_HELP_TEXT,
                 attachments=main_menu(services.subscription.is_active(uid), role, _chat_type(message)),
             )
             return
@@ -711,10 +694,6 @@ def register_handlers(dp, services):
                 user_ids=selected, source_user_message_id=source_user_message_id,
             )
             return
-        if payload == 'redeem_promo':
-            services.repository.set_user_state(uid, 'redeem_promo', {})
-            await event.message.answer('Введите промокод', attachments=back_keyboard())
-            return
         if payload == 'buy_subscription':
             await show_subscription(event, uid)
             return
@@ -782,9 +761,7 @@ def register_handlers(dp, services):
             await _send(event, '\n'.join(lines), services.settings_config, admin_panel_keyboard(role))
             return
         if payload.startswith('support_reply:'):
-            await event.message.answer(
-                'Эта кнопка относится к старому формату обращения. Откройте новый тикет через /помощь.'
-            )
+            await event.message.answer('Эта кнопка больше не действует. Создайте новое обращение через /помощь.')
             return
         if payload.startswith('ticket_reply:'):
             if _chat_type(message) in ('chat', 'channel'):
@@ -795,11 +772,11 @@ def register_handlers(dp, services):
             ticket_id = int(payload.split(':', 1)[1])
             ticket = services.repository.get_support_ticket(ticket_id)
             if not ticket or ticket['status'] != 'open':
-                await event.message.answer('Тикет уже закрыт или не найден.')
+                await event.message.answer('Обращение уже закрыто или не найдено.')
                 return
             services.repository.set_user_state(uid, 'support_reply', {'ticket_id': ticket_id})
             await event.message.answer(
-                f'Введите ответ для тикета №{ticket_id} ({ticket["user_name"]}, ID {ticket["user_id"]}).',
+                f'Введите ответ по запросу №{ticket_id} ({ticket["user_name"]}, ID {ticket["user_id"]}).',
                 attachments=back_keyboard(),
             )
             return
@@ -812,16 +789,16 @@ def register_handlers(dp, services):
             ticket_id = int(payload.split(':', 1)[1])
             ticket = services.repository.get_support_ticket(ticket_id)
             if not ticket or not services.repository.close_support_ticket(ticket_id):
-                await event.message.answer('Тикет уже закрыт или не найден.')
+                await event.message.answer('Обращение уже закрыто или не найдено.')
                 return
             try:
                 await event.bot.send_message(
                     user_id=int(ticket['user_id']),
-                    text=f'✅ Тикет №{ticket_id} закрыт поддержкой. Чтобы обратиться снова, отправьте /помощь.',
+                    text=f'✅ Запрос №{ticket_id} закрыт поддержкой. Чтобы обратиться снова, отправьте /помощь.',
                 )
             except Exception:
                 logger.exception('SUPPORT_TICKET_CLOSE_NOTIFY_FAILED ticket_id=%s', ticket_id)
-            await event.message.answer(f'Тикет №{ticket_id} закрыт.')
+            await event.message.answer(f'Запрос №{ticket_id} закрыт.')
             return
         if payload.startswith('ticket_user_close:'):
             if _chat_type(message) in ('chat', 'channel'):
@@ -829,20 +806,20 @@ def register_handlers(dp, services):
             ticket_id = int(payload.split(':', 1)[1])
             ticket = services.repository.get_support_ticket(ticket_id)
             if not ticket or int(ticket['user_id']) != int(uid):
-                await event.message.answer('Тикет не найден.')
+                await event.message.answer('Запрос не найден.')
                 return
             if not services.repository.close_support_ticket(ticket_id):
-                await event.message.answer('Тикет уже закрыт.')
+                await event.message.answer('Запрос уже закрыт.')
                 return
             services.repository.clear_user_state(uid)
             try:
                 await event.bot.send_message(
                     user_id=int(services.settings_config.support_user_id),
-                    text=f'ℹ️ Пользователь {ticket["user_name"]} (ID {uid}) закрыл тикет №{ticket_id}.',
+                    text=f'ℹ️ Пользователь {ticket["user_name"]} (ID {uid}) закрыл запрос №{ticket_id}.',
                 )
             except Exception:
                 logger.exception('SUPPORT_TICKET_CLOSE_NOTIFY_FAILED ticket_id=%s', ticket_id)
-            await event.message.answer(f'Тикет №{ticket_id} закрыт. Для нового обращения отправьте /помощь.')
+            await event.message.answer(f'Запрос №{ticket_id} закрыт. Для нового обращения отправьте /помощь.')
             return
         if payload.startswith('payment_check:'):
             order_id = payload.split(':', 1)[1]

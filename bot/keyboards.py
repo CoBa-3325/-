@@ -5,10 +5,10 @@ def kb(rows): return [types.ButtonsPayload(buttons=rows).pack()]
 def btn(text,payload): return {'type':'callback','text':text,'payload':payload}
 
 def main_menu(active=False, role='user', chat_type='chat'):
-    """Главное меню.
+    """Кнопки основного интерфейса.
 
-    В беседах доступен весь функционал, в ЛС — только подписка, а для
-    администраторов дополнительно вход в админ-панель.
+    В беседах доступны отчёт и кабинет, в ЛС — подписка и кабинет.
+    Администраторам дополнительно доступна админ-панель.
     """
     rows=[]
     if chat_type=='chat':
@@ -17,11 +17,12 @@ def main_menu(active=False, role='user', chat_type='chat'):
         if role=='user': rows.append([btn('⭐ Оформить подписку','buy_subscription')])
     else:
         rows.append([btn('⭐ Оформить подписку','buy_subscription')])
+    rows.append([btn('👤 Личный кабинет','cabinet')])
     if role=='admin': rows.append([btn('🛠 Админ-панель','admin_panel')])
     return kb(rows)
 
 def private_start_menu(active=False, role='user'):
-    """Меню первого сообщения в ЛС."""
+    """Кнопки первого сообщения в ЛС."""
     return main_menu(active, role, chat_type='dialog')
 
 def group_added_keyboard():
@@ -43,21 +44,21 @@ def cabinet_button_keyboard():
     return kb([[btn('👤 Личный кабинет','cabinet')]])
 
 def support_reply_keyboard(ticket_id):
-    """Кнопки управления обращением для сотрудника поддержки."""
+    """Кнопки управления запросом для сотрудника поддержки."""
     return kb([
         [btn('✉️ Ответить',f'ticket_reply:{ticket_id}')],
-        [btn('✅ Закрыть тикет',f'ticket_close:{ticket_id}')],
+        [btn('✅ Закрыть запрос',f'ticket_close:{ticket_id}')],
     ])
 
 def ticket_user_keyboard(ticket_id):
-    """Кнопка закрытия обращения пользователем."""
-    return kb([[btn('✅ Закрыть обращение',f'ticket_user_close:{ticket_id}')]])
+    """Кнопка закрытия запроса пользователем."""
+    return kb([[btn('✅ Закрыть запрос',f'ticket_user_close:{ticket_id}')]])
 
 def cabinet_keyboard(active=False, role='user'):
     if role=='admin':
-        rows=[[btn('🛠 Админ-панель','admin_panel')],[btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
+        rows=[[btn('🛠 Админ-панель','admin_panel')],[btn('↩️ Назад','back')]]
     else:
-        rows=[[btn('⭐ Оформить подписку','buy_subscription')],[btn('🎟 Ввести промокод','redeem_promo')],[btn('↩️ Назад','back')]]
+        rows=[[btn('⭐ Оформить подписку','buy_subscription')],[btn('↩️ Назад','back')]]
     return kb(rows)
 
 def summary_type_keyboard():
