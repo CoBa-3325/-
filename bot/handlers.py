@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 REPORT_FEEDBACK_NOTE = (
     '❤️ Хотите сделать отчёт ещё лучше?\n'
     'Или у вас возник вопрос по моей работе?\n'
-    'Напишите мне в личные сообщения <b>/помощь</b>.'
+    'Напишите мне в личные сообщения **/помощь**.'
 )
 
 def _get(obj, name, default=None):
@@ -75,7 +75,7 @@ async def _send(event, text, settings, attachments=None):
     chunks = [text[i:i + size] for i in range(0, len(text), size)] or ['']
     sent = []
     for i, c in enumerate(chunks):
-        sent.append(await event.message.answer(c, attachments=attachments if i == 0 else None, format='html', ))
+        sent.append(await event.message.answer(c, attachments=attachments if i == 0 else None, format='markdown'))
     return sent
 
 
