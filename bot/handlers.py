@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import asyncio
 import logging
 import math
 from datetime import datetime, timezone
@@ -583,9 +584,9 @@ def register_handlers(dp, services):
             and _is_report_navigation(payload)
             and not (payload == 'summary_menu' and _is_bot_added_greeting(message))
         ):
-            await _delete_report_step(event)
+            asyncio.create_task(_delete_report_step(event))
         elif not payload.startswith(('support_reply:', 'ticket_reply:')):
-            await _delete_callback_message(event)
+            asyncio.create_task(_delete_callback_message(event))
 
         if payload == 'cabinet':
             await event.message.answer(

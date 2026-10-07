@@ -214,6 +214,12 @@ def _ensure_order_columns(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE orders ADD COLUMN payment_url TEXT")
     if 'reminder_sent_at' not in cols:
         connection.execute("ALTER TABLE orders ADD COLUMN reminder_sent_at TEXT")
+    connection.execute(
+        """CREATE INDEX IF NOT EXISTS idx_orders_pending_payment_reminder
+           ON orders(created_at)
+           WHERE status='pending' AND product_type='subscription'
+             AND payment_url IS NOT NULL AND reminder_sent_at IS NULL"""
+    )
 
 
 def _migrate_legacy_balances(connection: sqlite3.Connection) -> None:
