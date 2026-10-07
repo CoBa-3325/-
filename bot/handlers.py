@@ -16,12 +16,10 @@ from schemas.message import MessageRecord
 logger = logging.getLogger(__name__)
 
 REPORT_FEEDBACK_NOTE = (
-     '🐶 \n'
     '❤️ Хотите сделать отчёт ещё лучше?\n'
     'Или у вас возник вопрос по моей работе?\n'
-    'Напишите мне в личные сообщения /помощь.'
+    'Напишите мне в личные сообщения <b>/помощь</b>.'
 )
-
 
 def _get(obj, name, default=None):
     return obj.get(name, default) if isinstance(obj, dict) else getattr(obj, name, default)
@@ -77,7 +75,7 @@ async def _send(event, text, settings, attachments=None):
     chunks = [text[i:i + size] for i in range(0, len(text), size)] or ['']
     sent = []
     for i, c in enumerate(chunks):
-        sent.append(await event.message.answer(c, attachments=attachments if i == 0 else None))
+        sent.append(await event.message.answer(c, attachments=attachments if i == 0 else None, format='html', ))
     return sent
 
 
@@ -149,24 +147,6 @@ def _is_bot_added_greeting(message):
     body = _get(message, 'body') or {}
     text = str(_get(body, 'text') or '').strip()
     return text == GROUP_HELP_TEXT.strip()
-
-
-def _report_scope(services, chat_id, user_ids=None):
-    if not user_ids:
-        return 'вся беседа'
-    selected = {int(user_id) for user_id in user_ids}
-    names = [
-        str(author['user_name'] or author['user_id'])
-        for author in services.repository.list_message_authors(chat_id)
-        if int(author['user_id']) in selected
-    ]
-    return ', '.join(names) if names else 'выбранные участники'
-
-
-def _report_period_label(start, end):
-    start_label = start.astimezone(timezone.utc).strftime('%d.%m.%Y')
-    end_label = end.astimezone(timezone.utc).strftime('%d.%m.%Y')
-    return f'{start_label} — {end_label}'
 
 
 def _role(services, uid):
@@ -255,9 +235,7 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n'
-                + '👥 По кому: вся беседа\n'
-                + f'📅 Период: {_report_period_label(period.start, period.end)} '
-                + f'(последние {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней') + ')'
+                + f'📊 Отчёт за {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
                 + '\n\n' + result + '\n\n' + REPORT_FEEDBACK_NOTE,
                 services.settings_config,
             )
@@ -306,9 +284,7 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n'
-                f'👥 По кому: {_report_scope(services, chat_id, user_ids)}\n'
-                f'📅 Период: {_report_period_label(start, end)} ({title})\n\n'
-                f'{result}\n\n{REPORT_FEEDBACK_NOTE}',
+                f'📊 Отчёт за {title}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
                 services.settings_config,
             )
             # Команду пользователя /отчет не удаляем.
