@@ -16,8 +16,8 @@ from schemas.message import MessageRecord
 logger = logging.getLogger(__name__)
 
 REPORT_FEEDBACK_NOTE = (
-    '❤️ Хотите сделать отчёты полезнее? Напишите боту в личные сообщения команду /помощь и ваше предложение — '
-    'оператор свяжется с Вами и учтет его.'
+    '🐶 ❤️Хотите сделать отчёт еще лучше? Или у Вас возник вопрос по моей работе?'
+    'Напишите мне /помощь в личные сообщения.'
 )
 
 
@@ -149,6 +149,24 @@ def _is_bot_added_greeting(message):
     return text == GROUP_HELP_TEXT.strip()
 
 
+def _report_scope(services, chat_id, user_ids=None):
+    if not user_ids:
+        return 'вся беседа'
+    selected = {int(user_id) for user_id in user_ids}
+    names = [
+        str(author['user_name'] or author['user_id'])
+        for author in services.repository.list_message_authors(chat_id)
+        if int(author['user_id']) in selected
+    ]
+    return ', '.join(names) if names else 'выбранные участники'
+
+
+def _report_period_label(start, end):
+    start_label = start.astimezone(timezone.utc).strftime('%d.%m.%Y')
+    end_label = end.astimezone(timezone.utc).strftime('%d.%m.%Y')
+    return f'{start_label} — {end_label}'
+
+
 def _role(services, uid):
     return services.roles.get_role(uid)
 
@@ -235,7 +253,9 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n'
-                + f'📊 Отчёт за {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
+                + '👥 По кому: вся беседа\n'
+                + f'📅 Период: {_report_period_label(period.start, period.end)} '
+                + f'(последние {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней') + ')'
                 + '\n\n' + result + '\n\n' + REPORT_FEEDBACK_NOTE,
                 services.settings_config,
             )
@@ -284,7 +304,9 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n'
-                f'📊 Отчёт за {title}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
+                f'👥 По кому: {_report_scope(services, chat_id, user_ids)}\n'
+                f'📅 Период: {_report_period_label(start, end)} ({title})\n\n'
+                f'{result}\n\n{REPORT_FEEDBACK_NOTE}',
                 services.settings_config,
             )
             # Команду пользователя /отчет не удаляем.
