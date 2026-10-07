@@ -59,6 +59,18 @@ def _report_period_text(start, end, title):
     return f'📅 Период: {start_text} — {end_text} ({title})'
 
 
+def _report_people_text(services, chat_id, user_ids=None):
+    if not user_ids:
+        return '👥 По кому: вся беседа'
+    selected = {int(user_id) for user_id in user_ids}
+    names = [
+        str(author['user_name'] or author['user_id'])
+        for author in services.repository.list_message_authors(chat_id)
+        if int(author['user_id']) in selected
+    ]
+    return f'👥 По кому: {", ".join(names) if names else "выбранные участники"}'
+
+
 def _message_meta(event):
     m = _get(event, 'message')
     b = _get(m, 'body')
@@ -241,6 +253,8 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n'
+                + _report_people_text(services, chat_id)
+                + '\n'
                 + _report_period_text(
                     period.start,
                     period.end,
@@ -294,7 +308,8 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n'
-                 f'{_report_period_text(start, end, title)}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
+                f'{_report_people_text(services, chat_id, user_ids)}\n'
+                f'{_report_period_text(start, end, title)}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
                 services.settings_config,
             )
             # Команду пользователя /отчет не удаляем.
