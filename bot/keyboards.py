@@ -55,11 +55,7 @@ def ticket_user_keyboard(ticket_id):
     return kb([[btn('✅ Закрыть запрос',f'ticket_user_close:{ticket_id}')]])
 
 def cabinet_keyboard(active=False, role='user'):
-    if role=='admin':
-        rows=[[btn('🛠 Админ-панель','admin_panel')],[btn('↩️ Назад','back')]]
-    else:
-        rows=[[btn('⭐ Оформить подписку','buy_subscription')],[btn('↩️ Назад','back')]]
-    return kb(rows)
+    return back_keyboard()
 
 def summary_type_keyboard():
     return kb([

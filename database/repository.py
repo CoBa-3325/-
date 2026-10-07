@@ -233,6 +233,7 @@ class Repository:
                 self.connection.execute("""INSERT INTO subscriptions(user_id,started_at,ends_at,is_unlimited_subscription,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?)
                     ON CONFLICT(user_id) DO UPDATE SET started_at=excluded.started_at,ends_at=excluded.ends_at,is_unlimited_subscription=0,source='paid',updated_at=excluded.updated_at""",(row['user_id'],subscription_start.isoformat(),subscription_end.isoformat(),0,'paid',now,now))
                 self.connection.execute("UPDATE users SET subscription_start=?,subscription_end=?,is_unlimited_subscription=0,updated_at=? WHERE user_id=?",(subscription_start.isoformat(),subscription_end.isoformat(),now,row['user_id']))
+                self.connection.execute("UPDATE token_grants SET remaining_amount=0 WHERE user_id=? AND token_type='trial' AND remaining_amount>0",(row['user_id'],))
             self.connection.commit();return True
         except Exception:
             self.connection.rollback();raise
