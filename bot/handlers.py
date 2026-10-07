@@ -53,6 +53,12 @@ def _user_greeting(message, event=None):
     return f'{name} (@{username})' if username else name
 
 
+def _report_period_text(start, end, title):
+    start_text = start.astimezone(timezone.utc).strftime('%d.%m.%Y')
+    end_text = end.astimezone(timezone.utc).strftime('%d.%m.%Y')
+    return f'📅 Период: {start_text} — {end_text} ({title})'
+
+
 def _message_meta(event):
     m = _get(event, 'message')
     b = _get(m, 'body')
@@ -235,7 +241,11 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n'
-                + f'📊 Отчёт за {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
+                + _report_period_text(
+                    period.start,
+                    period.end,
+                    f'{days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней'),
+                )
                 + '\n\n' + result + '\n\n' + REPORT_FEEDBACK_NOTE,
                 services.settings_config,
             )
@@ -284,7 +294,7 @@ def register_handlers(dp, services):
             await _send(
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n'
-                f'📊 Отчёт за {title}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
+                 f'{_report_period_text(start, end, title)}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
                 services.settings_config,
             )
             # Команду пользователя /отчет не удаляем.
