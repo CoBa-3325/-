@@ -218,6 +218,34 @@ class Repository:
     def get_order(self,order_id):return self.connection.execute("SELECT * FROM orders WHERE order_id=?",(order_id,)).fetchone()
     def get_order_by_payment(self,payment_id):return self.connection.execute("SELECT * FROM orders WHERE payment_id=?",(payment_id,)).fetchone()
     def set_payment_id(self,order_id,payment_id):self.connection.execute("UPDATE orders SET payment_id=?,updated_at=? WHERE order_id=?",(payment_id,self.now(),order_id));self.connection.commit()
+    def set_payment_url(self,order_id,payment_url):
+        self.connection.execute("UPDATE orders SET payment_url=?,updated_at=? WHERE order_id=?",(payment_url,self.now(),order_id));self.connection.commit()
+    def list_orders_for_payment_reminder(self,created_before,limit=100):
+        return self.connection.execute(
+            "SELECT * FROM orders WHERE status='pending' AND product_type='subscription' AND payment_url IS NOT NULL AND reminder_sent_at IS NULL AND created_at<=? ORDER BY created_at LIMIT ?",
+            (created_before.isoformat(),limit),
+        ).fetchall()
+    def mark_payment_reminder_sent(self,order_id):
+        cur=self.connection.execute(
+            "UPDATE orders SET reminder_sent_at=?,updated_at=? WHERE order_id=? AND status='pending' AND reminder_sent_at IS NULL",
+            (self.now(),self.now(),order_id),
+        );self.connection.commit();return cur.rowcount==1
+    def claim_payment_reminder(self,order_id):
+        self.connection.execute('BEGIN IMMEDIATE')
+        try:
+            cur=self.connection.execute(
+                "UPDATE orders SET reminder_sent_at=?,updated_at=? WHERE order_id=? AND status='pending' AND reminder_sent_at IS NULL",
+                (self.now(),self.now(),order_id),
+            )
+            self.connection.commit()
+            return cur.rowcount==1
+        except Exception:
+            self.connection.rollback();raise
+    def release_payment_reminder_claim(self,order_id):
+        self.connection.execute(
+            "UPDATE orders SET reminder_sent_at=NULL,updated_at=? WHERE order_id=? AND status='pending'",
+            (self.now(),order_id),
+        );self.connection.commit()
     def set_order_status(self,order_id,status):self.connection.execute("UPDATE orders SET status=?,updated_at=? WHERE order_id=?",(status,self.now(),order_id));self.connection.commit()
     def fulfill_order(self,order_id,*,token_amount=0,subscription_start=None,subscription_end=None):
         now=self.now(); self.connection.execute("BEGIN IMMEDIATE")

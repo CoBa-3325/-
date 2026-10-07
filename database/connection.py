@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS orders (
     status TEXT NOT NULL CHECK(status IN ('pending','paid','cancelled','failed')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    paid_at TEXT
+    paid_at TEXT,
+    payment_url TEXT,
+    reminder_sent_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id,created_at);
 
@@ -204,6 +206,16 @@ def _ensure_user_columns(connection: sqlite3.Connection) -> None:
     if 'is_unlimited_subscription' not in cols: connection.execute("ALTER TABLE users ADD COLUMN is_unlimited_subscription INTEGER NOT NULL DEFAULT 0")
 
 
+def _ensure_order_columns(connection: sqlite3.Connection) -> None:
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='orders'").fetchone():
+        return
+    cols = _table_columns(connection, 'orders')
+    if 'payment_url' not in cols:
+        connection.execute("ALTER TABLE orders ADD COLUMN payment_url TEXT")
+    if 'reminder_sent_at' not in cols:
+        connection.execute("ALTER TABLE orders ADD COLUMN reminder_sent_at TEXT")
+
+
 def _migrate_legacy_balances(connection: sqlite3.Connection) -> None:
     """Move old user+chat balances into one user-wide token pool.
 
@@ -259,6 +271,7 @@ def connect(db_path: str) -> sqlite3.Connection:
     _ensure_user_columns(connection)
     connection.executescript(SCHEMA)
     _ensure_user_columns(connection)
+    _ensure_order_columns(connection)
     # Migrate the older subscription table shape without dropping payment history.
     if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='subscriptions'").fetchone():
         cols=_table_columns(connection,'subscriptions')

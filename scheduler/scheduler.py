@@ -6,10 +6,11 @@ from datetime import datetime, timezone, timedelta
 logger = logging.getLogger(__name__)
 
 class Scheduler:
-    def __init__(self, repository, bot, warning_days=1):
+    def __init__(self, repository, bot, warning_days=1, payment_service=None):
         self.repository = repository
         self.bot = bot
         self.warning_days = warning_days
+        self.payment_service = payment_service
         self._stop = asyncio.Event()
         self._last_chat_check = None
 
@@ -67,6 +68,17 @@ class Scheduler:
 
         while not self._stop.is_set():
             try:
+                if self.payment_service:
+                    cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+                    for order in self.repository.list_orders_for_payment_reminder(cutoff):
+                        try:
+                            await self.payment_service.send_payment_reminder(order, self.bot)
+                        except Exception:
+                            logger.exception('PAYMENT_REMINDER_FAILED order_id=%s', order['order_id'])
+            except Exception:
+                logger.exception('PAYMENT_REMINDERS_SCAN_FAILED')
+
+            try:
                 if self.warning_days:
                     now = datetime.now(timezone.utc)
                     limit = now + timedelta(days=self.warning_days)
@@ -92,7 +104,7 @@ class Scheduler:
                 logger.exception('CHAT_CHECK_FAILED')
 
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=3600)
+                await asyncio.wait_for(self._stop.wait(), timeout=60)
             except asyncio.TimeoutError:
                 pass
 

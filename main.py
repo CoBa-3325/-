@@ -120,6 +120,7 @@ async def main():
         services.repository,
         bot,
         settings.subscription_expiration_warning_days,
+        services.payment,
     )
 
     scheduler_task = asyncio.create_task(

@@ -8,19 +8,22 @@ class CabinetService:
     def render(self,user_id):
         role=self.role_service.get_role(user_id) if self.role_service else 'user'
         if role=='admin':
-            return 'Для вашего аккаунта отчёты доступны без ограничений.'
+            return '👤 ЛИЧНЫЙ КАБИНЕТ\n\n✨ Для Вашего аккаунта отчёты доступны без ограничений.'
         elif self.subscription_service.is_unlimited(user_id):
-            return 'Для вашего аккаунта отчёты доступны без ограничений.'
+            return '👤 ЛИЧНЫЙ КАБИНЕТ\n\n✨ Для Вашего аккаунта отчёты доступны без ограничений.'
         end=self.subscription_service.active_until(user_id)
         if end:
             days=max(0,math.ceil((end-datetime.now(timezone.utc)).total_seconds()/86400))
             return (
-                f'Подписка действует до {end.astimezone(timezone.utc).strftime("%d.%m.%Y")}.'
-                f'\nДо окончания подписки осталось дней: {days}.'
+                '👤 ЛИЧНЫЙ КАБИНЕТ\n\n'
+                '⭐ Ваша подписка активна\n'
+                f'📅 Действует до: {end.astimezone(timezone.utc).strftime("%d.%m.%Y")}\n'
+                f'⏳ Осталось дней: {days}'
             )
         balance=self.token_service.balance(user_id)
         return (
-            'Если Вам понадобится больше возможностей, подписку можно оформить в меню бота. '
-            'Это совершенно необязательно. '
-            f'\nОсталось пробных отчётов: {balance}.'
+            '👤 ЛИЧНЫЙ КАБИНЕТ\n\n'
+            'Пока у Вас нет активной подписки. Если захотите пользоваться отчётами без ограничений, '
+            'оформить подписку можно в меню бота — конечно, только если это будет Вам удобно.\n\n'
+            f'🎁 Осталось пробных отчётов: {balance}'
         )

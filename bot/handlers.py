@@ -15,6 +15,11 @@ from schemas.message import MessageRecord
 
 logger = logging.getLogger(__name__)
 
+REPORT_FEEDBACK_NOTE = (
+    '❤️ Хотите сделать отчёты полезнее? Напишите боту в личные сообщения команду /помощь и ваше предложение — '
+    'оператор свяжется с Вами и учтет его.'
+)
+
 
 def _get(obj, name, default=None):
     return obj.get(name, default) if isinstance(obj, dict) else getattr(obj, name, default)
@@ -231,7 +236,7 @@ def register_handlers(dp, services):
                 event,
                 f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n'
                 + f'📊 Отчёт за {days} ' + ('день' if days == 1 else 'дня' if 2 <= days <= 4 else 'дней')
-                + '\n\n' + result,
+                + '\n\n' + result + '\n\n' + REPORT_FEEDBACK_NOTE,
                 services.settings_config,
             )
             # Команду пользователя /отчет не удаляем.
@@ -276,7 +281,12 @@ def register_handlers(dp, services):
             llm_succeeded = True
             services.summary.save_run(chat_id, start, end, result)
             services.cooldown.activate(chat_id)
-            await _send(event, f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n📊 Отчёт за {title}\n\n{result}', services.settings_config)
+            await _send(
+                event,
+                f'Уважаемый {greeting}, вот сводка за выбранный вами период времени:\n\n'
+                f'📊 Отчёт за {title}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
+                services.settings_config,
+            )
             # Команду пользователя /отчет не удаляем.
         except Exception:
             if op and not llm_succeeded:

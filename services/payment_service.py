@@ -46,11 +46,13 @@ class PaymentService:
                 self.settings.yookassa_return_url,
             )
             self.repository.set_payment_id(order_id, payment['id'])
+            payment_url = payment.get('confirmation', {}).get('confirmation_url')
+            self.repository.set_payment_url(order_id, payment_url)
             logger.info(
                 'PAYMENT_CREATED order_id=%s payment_id=%s user_id=%s product=%s tariff=%s',
                 order_id, payment['id'], user_id, product, tariff,
             )
-            return self.repository.get_order(order_id), payment.get('confirmation', {}).get('confirmation_url')
+            return self.repository.get_order(order_id), payment_url
         except Exception:
             self.repository.set_order_status(order_id, 'failed')
             logger.exception('PAYMENT_CREATE_FAILED order_id=%s', order_id)
@@ -168,4 +170,46 @@ class PaymentService:
         if user_id is not None and order['user_id'] != user_id:
             return False
         self.repository.set_order_status(order_id, 'cancelled')
+        return True
+
+    async def send_payment_reminder(self, order, bot):
+        """Recheck an unpaid subscription and send one delayed payment reminder."""
+        current = self.repository.get_order(order['order_id'])
+        if not current or current['status'] != 'pending' or not current['payment_url']:
+            return False
+        if not current['payment_id']:
+            return False
+
+        payment = await self.yookassa.get_payment(current['payment_id'])
+        await self._verify_payment_object(current, payment)
+
+        # Successful/cancelled payments are no longer pending after verification.
+        current = self.repository.get_order(current['order_id'])
+        if not current or current['status'] != 'pending':
+            return False
+
+        from maxapi.enums.parse_mode import ParseMode
+        from maxapi.utils.formatting import UserMention
+
+        mention = UserMention('Здравствуйте!', user_id=int(current['user_id'])).as_html()
+        message = (
+            f'{mention}\n\nВы оформляли подписку, но оплата пока не завершена. '
+            'Если Вы всё ещё хотите её оформить, можно вернуться к оплате по ссылке ниже. '
+            'Если планы изменились — просто проигнорируйте это сообщение.\n\n'
+            f'<a href="{current["payment_url"]}">Перейти к оплате</a>'
+        )
+
+        # Claim before network delivery so concurrent scheduler runs cannot duplicate it.
+        if not self.repository.claim_payment_reminder(current['order_id']):
+            return False
+        try:
+            await bot.send_message(
+                user_id=int(current['user_id']),
+                text=message,
+                format=ParseMode.HTML,
+            )
+        except Exception:
+            self.repository.release_payment_reminder_claim(current['order_id'])
+            raise
+        logger.info('PAYMENT_REMINDER_SENT order_id=%s user_id=%s', current['order_id'], current['user_id'])
         return True
