@@ -64,6 +64,14 @@ def summary_type_keyboard():
         [btn('↩️ Назад','summary_cancel')],
     ])
 
+def summary_chat_keyboard(chats):
+    rows = []
+    for chat in chats:
+        title = chat['title'] or f"Беседа {chat['chat_id']}"
+        rows.append([btn(title[:40], f"summary_chat:{chat['chat_id']}")])
+    rows.append([btn('↩️ Назад', 'back')])
+    return kb(rows)
+
 def summary_period_keyboard():
     return kb([
         [btn('За 1 день','summary_period:1'),btn('За 3 дня','summary_period:3')],

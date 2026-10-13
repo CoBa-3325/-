@@ -155,6 +155,7 @@ async def _delete_report_step(event):
 def _is_report_navigation(payload):
     return (
         payload in ('summary_menu', 'summary_people_done', 'summary_cancel')
+        or payload.startswith('summary_chat:')
         or payload.startswith('summary_type:')
         or payload.startswith('summary_period:')
         or payload.startswith('summary_people_toggle:')
@@ -515,10 +516,16 @@ def register_handlers(dp, services):
             )
             return
         if command == '/отчет':
-            if ctype != 'chat':
-                # В ЛС и каналах отчёты недоступны и никаких сообщений не отправляется.
+            if ctype == 'channel':
                 return
             greeting = _user_greeting(message, event)
+            if ctype != 'chat':
+                chats = services.repository.list_user_chats(uid)
+                if not chats:
+                    await event.message.answer('Не нашёл бесед с ботом, в которых есть ваши сообщения.')
+                    return
+                await event.message.answer('Выберите беседу для отчёта:', attachments=summary_chat_keyboard(chats))
+                return
             remaining = services.cooldown.remaining_seconds(chat_id)
             if remaining:
                 await event.message.answer(
@@ -605,11 +612,14 @@ def register_handlers(dp, services):
             )
             return
         if payload == 'summary_menu':
-            if _chat_type(message) != 'chat':
-                await event.message.answer('Отчёты доступны только в беседах.')
+            if _chat_type(message) not in ('chat', 'dialog'):
                 return
             greeting = _user_greeting(message, event)
             chat_id = _get(_get(message, 'recipient'), 'chat_id')
+            if _chat_type(message) != 'chat':
+                chats = services.repository.list_user_chats(uid)
+                await event.message.answer('Выберите беседу для отчёта:', attachments=summary_chat_keyboard(chats))
+                return
             if chat_id is not None:
                 services.repository.set_user_state(
                     uid, 'summary_origin', {'message_id': None, 'chat_id': int(chat_id), 'greeting': greeting}
@@ -619,23 +629,40 @@ def register_handlers(dp, services):
                 attachments=summary_type_keyboard(),
             )
             return
-        if payload == 'summary_cancel':
-            if _chat_type(message) != 'chat':
+        if payload.startswith('summary_chat:'):
+            if _chat_type(message) == 'chat':
                 return
+            chat_id = int(payload.split(':', 1)[1])
+            if not any(int(row['chat_id']) == chat_id for row in services.repository.list_user_chats(uid)):
+                await event.message.answer('Эта беседа недоступна для отчёта. Отправьте /отчет ещё раз.')
+                return
+            greeting = _user_greeting(message, event)
+            remaining = services.cooldown.remaining_seconds(chat_id)
+            if remaining:
+                await event.message.answer(f'Уважаемый {greeting}, подождите ещё {math.ceil(remaining / 60)} минут до следующего запроса в этой беседе.')
+                return
+            services.repository.set_user_state(uid, 'summary_origin', {'message_id': None, 'chat_id': chat_id, 'greeting': greeting})
+            await event.message.answer(f'Уважаемый {greeting}, какой отчёт сформировать?', attachments=summary_type_keyboard())
+            return
+        if payload == 'summary_cancel':
             services.repository.clear_user_state(uid)
             greeting = _user_greeting(message, event)
+            if _chat_type(message) != 'chat':
+                chats = services.repository.list_user_chats(uid)
+                await event.message.answer('Выберите беседу для отчёта:', attachments=summary_chat_keyboard(chats))
+                return
             await event.message.answer(
                 f'Уважаемый {greeting}, какой отчёт сформировать?',
                 attachments=summary_type_keyboard(),
             )
             return
         if payload == 'summary_type:general':
-            if _chat_type(message) != 'chat':
-                await event.message.answer('Отчёты доступны только в беседах.')
-                return
             greeting = _user_greeting(message, event)
             origin = services.repository.get_user_state(uid)
             if not origin or origin[0] != 'summary_origin':
+                if _chat_type(message) != 'chat':
+                    await event.message.answer('Сначала выберите беседу командой /отчет.')
+                    return
                 chat_id = _get(_get(message, 'recipient'), 'chat_id')
                 services.repository.set_user_state(
                     uid, 'summary_origin', {'message_id': None, 'chat_id': int(chat_id), 'greeting': greeting}
@@ -646,15 +673,16 @@ def register_handlers(dp, services):
             )
             return
         if payload in ('summary_type:people', 'summary_people'):
-            chat_id = _get(_get(message, 'recipient'), 'chat_id')
-            if _chat_type(message) != 'chat' or chat_id is None:
-                await event.message.answer('Выбор участников доступен только в беседах.')
+            origin = services.repository.get_user_state(uid)
+            chat_id = (origin[1].get('chat_id') if origin and origin[0] == 'summary_origin'
+                       else _get(_get(message, 'recipient'), 'chat_id'))
+            if chat_id is None or (_chat_type(message) != 'chat' and (not origin or origin[0] != 'summary_origin')):
+                await event.message.answer('Сначала выберите беседу командой /отчет.')
                 return
             authors = services.repository.list_message_authors(chat_id)
             if not authors:
                 await event.message.answer('Пока нет сообщений участников, по которым можно выбрать людей.')
                 return
-            origin = services.repository.get_user_state(uid)
             origin_id = origin[1].get('message_id') if origin and origin[0] == 'summary_origin' else None
             greeting = origin[1].get('greeting', _user_greeting(message, event)) if origin else _user_greeting(message, event)
             services.repository.set_user_state(
@@ -673,7 +701,7 @@ def register_handlers(dp, services):
                 return
             data = state[1]
             chat_id = int(data['chat_id'])
-            if int(_get(_get(message, 'recipient'), 'chat_id') or chat_id) != chat_id:
+            if _chat_type(message) == 'chat' and int(_get(_get(message, 'recipient'), 'chat_id') or chat_id) != chat_id:
                 await event.message.answer('Пожалуйста, выберите участников заново.')
                 return
             target = int(payload.split(':', 1)[1])
@@ -701,10 +729,6 @@ def register_handlers(dp, services):
             )
             return
         if payload.startswith('summary_people_period:'):
-            if _chat_type(message) != 'chat':
-                services.repository.clear_user_state(uid)
-                await event.message.answer('Сегментация по людям доступна только в беседах.')
-                return
             state = services.repository.get_user_state(uid)
             if not state or state[0] != 'summary_people' or not state[1].get('selected'):
                 await event.message.answer('Пожалуйста, выберите участников заново.')
@@ -742,9 +766,6 @@ def register_handlers(dp, services):
             await send_payment(event, order, link)
             return
         if payload.startswith('summary_period:'):
-            if _chat_type(message) != 'chat':
-                await event.message.answer('Отчёты доступны только в беседах.')
-                return
             val = payload.split(':', 1)[1]
             origin = services.repository.get_user_state(uid)
             origin_id = None
@@ -753,8 +774,11 @@ def register_handlers(dp, services):
                 greeting = origin[1].get('greeting', _user_greeting(message, event))
                 services.repository.clear_user_state(uid)
             else:
+                if _chat_type(message) != 'chat':
+                    await event.message.answer('Сначала выберите беседу командой /отчет.')
+                    return
                 greeting = _user_greeting(message, event)
-            chat_id = _get(_get(message, 'recipient'), 'chat_id')
+            chat_id = origin[1].get('chat_id') if origin and origin[0] == 'summary_origin' else _get(_get(message, 'recipient'), 'chat_id')
             # Старое сообщение с выбором периода уже удалено; состояние
             # сохраняет имя и ник пользователя для итогового обращения.
             if val == 'all':
