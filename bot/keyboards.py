@@ -16,6 +16,7 @@ def main_menu(active=False, role='user', chat_type='chat'):
         rows.append([btn('👤 Личный кабинет','cabinet')])
         if role=='user': rows.append([btn('⭐ Оформить подписку','buy_subscription')])
     else:
+        rows.append([btn('📊 Отчёт по беседе','summary_menu')])
         rows.append([btn('⭐ Оформить подписку','buy_subscription')])
     rows.append([btn('👤 Личный кабинет','cabinet')])
     if role=='admin': rows.append([btn('🛠 Админ-панель','admin_panel')])
