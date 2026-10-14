@@ -173,6 +173,33 @@ def _role(services, uid):
     return services.roles.get_role(uid)
 
 
+async def _user_report_chats(event, services, uid):
+    """Return only chats where the user has participated and bot is still a member."""
+    chats = services.repository.list_user_chats(uid)
+    active = []
+    for row in chats:
+        chat_id = row['chat_id']
+        try:
+            membership = await event.bot.get_me_from_chat(int(chat_id))
+            if membership is None:
+                services.repository.delete_chat(chat_id)
+                continue
+            title = _get(membership, 'title')
+            if title and title != row['title']:
+                services.repository.update_chat_title(chat_id, title)
+                row = dict(row)
+                row['title'] = title
+            active.append(row)
+        except Exception as exc:
+            from scheduler.scheduler import Scheduler
+            if Scheduler._chat_unavailable(exc):
+                services.repository.delete_chat(chat_id)
+            else:
+                logger.warning('USER_CHAT_CHECK_FAILED chat_id=%s user_id=%s error=%s', chat_id, uid, exc)
+                active.append(row)
+    return active
+
+
 def _non_report_attachments(event, attachments):
     # В беседах оставляем только кнопки, относящиеся к /отчет.
     return None if _chat_type(_get(event, 'message')) == 'chat' else attachments
@@ -520,11 +547,11 @@ def register_handlers(dp, services):
                 return
             greeting = _user_greeting(message, event)
             if ctype != 'chat':
-                chats = services.repository.list_user_chats(uid)
+                chats = await _user_report_chats(event, services, uid)
                 if not chats:
                     await event.message.answer('Не нашёл бесед с ботом, в которых есть ваши сообщения.')
                     return
-                await event.message.answer('Выберите беседу для отчёта:', attachments=summary_chat_keyboard(chats))
+                await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
                 return
             remaining = services.cooldown.remaining_seconds(chat_id)
             if remaining:
@@ -617,8 +644,8 @@ def register_handlers(dp, services):
             greeting = _user_greeting(message, event)
             chat_id = _get(_get(message, 'recipient'), 'chat_id')
             if _chat_type(message) != 'chat':
-                chats = services.repository.list_user_chats(uid)
-                await event.message.answer('Выберите беседу для отчёта:', attachments=summary_chat_keyboard(chats))
+                chats = await _user_report_chats(event, services, uid)
+                await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
                 return
             if chat_id is not None:
                 services.repository.set_user_state(
@@ -629,11 +656,21 @@ def register_handlers(dp, services):
                 attachments=summary_type_keyboard(),
             )
             return
+        if payload.startswith('summary_chats_page:'):
+            if _chat_type(message) == 'chat':
+                return
+            page = max(0, int(payload.split(':', 1)[1]))
+            chats = await _user_report_chats(event, services, uid)
+            if not chats:
+                await event.message.answer('Не нашёл бесед с ботом, в которых есть ваши сообщения.')
+                return
+            await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats, page))
+            return
         if payload.startswith('summary_chat:'):
             if _chat_type(message) == 'chat':
                 return
             chat_id = int(payload.split(':', 1)[1])
-            if not any(int(row['chat_id']) == chat_id for row in services.repository.list_user_chats(uid)):
+            if not any(int(row['chat_id']) == chat_id for row in await _user_report_chats(event, services, uid)):
                 await event.message.answer('Эта беседа недоступна для отчёта. Отправьте /отчет ещё раз.')
                 return
             greeting = _user_greeting(message, event)
@@ -648,8 +685,8 @@ def register_handlers(dp, services):
             services.repository.clear_user_state(uid)
             greeting = _user_greeting(message, event)
             if _chat_type(message) != 'chat':
-                chats = services.repository.list_user_chats(uid)
-                await event.message.answer('Выберите беседу для отчёта:', attachments=summary_chat_keyboard(chats))
+                chats = await _user_report_chats(event, services, uid)
+                await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
                 return
             await event.message.answer(
                 f'Уважаемый {greeting}, какой отчёт сформировать?',

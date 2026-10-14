@@ -64,11 +64,16 @@ def summary_type_keyboard():
         [btn('↩️ Назад','summary_cancel')],
     ])
 
-def summary_chat_keyboard(chats):
+def summary_chat_keyboard(chats, page=0, page_size=8):
     rows = []
-    for chat in chats:
+    start = page * page_size
+    for chat in chats[start:start + page_size]:
         title = chat['title'] or f"Беседа {chat['chat_id']}"
         rows.append([btn(title[:40], f"summary_chat:{chat['chat_id']}")])
+    if page > 0:
+        rows.append([btn('⬅️ Предыдущие', f'summary_chats_page:{page - 1}')])
+    if start + page_size < len(chats):
+        rows.append([btn('Следующие ➡️', f'summary_chats_page:{page + 1}')])
     rows.append([btn('↩️ Назад', 'back')])
     return kb(rows)
 

@@ -44,8 +44,11 @@ class Repository:
             ON CONFLICT(chat_id) DO UPDATE SET chat_type=excluded.chat_type,title=COALESCE(excluded.title,chats.title),updated_at=excluded.updated_at""",(chat_id,chat_type,title,now,now)); self.connection.commit()
 
     def list_user_chats(self,user_id):
+        """List tracked groups where this user has participated, even if older
+        messages were pruned from the report context."""
         return self.connection.execute("""SELECT DISTINCT c.chat_id,c.chat_type,c.title
-            FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE m.user_id=? AND c.chat_type='chat'
+            FROM chats c JOIN messages m ON m.chat_id=c.chat_id
+            WHERE m.user_id=? AND c.chat_type='chat'
             ORDER BY c.updated_at DESC""",(user_id,)).fetchall()
 
     def list_group_chats(self):
