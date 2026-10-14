@@ -174,7 +174,7 @@ def _role(services, uid):
 
 
 async def _user_report_chats(event, services, uid):
-    """Return only chats where the user has participated and bot is still a member."""
+    """Return chats where both the current user and the bot are members."""
     chats = services.repository.list_user_chats(uid)
     active = []
     for row in chats:
@@ -183,6 +183,9 @@ async def _user_report_chats(event, services, uid):
             membership = await event.bot.get_me_from_chat(int(chat_id))
             if membership is None:
                 services.repository.delete_chat(chat_id)
+                continue
+            user_membership = await event.bot.get_chat_member(int(chat_id), int(uid))
+            if user_membership is None:
                 continue
             title = _get(membership, 'title')
             if title and title != row['title']:
@@ -195,8 +198,9 @@ async def _user_report_chats(event, services, uid):
             if Scheduler._chat_unavailable(exc):
                 services.repository.delete_chat(chat_id)
             else:
-                logger.warning('USER_CHAT_CHECK_FAILED chat_id=%s user_id=%s error=%s', chat_id, uid, exc)
-                active.append(row)
+                # Fail closed: without confirming the user's membership, do
+                # not expose the group in the report picker.
+                logger.warning('USER_CHAT_MEMBERSHIP_CHECK_FAILED chat_id=%s user_id=%s error=%s', chat_id, uid, exc)
     return active
 
 
