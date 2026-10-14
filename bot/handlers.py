@@ -666,6 +666,8 @@ def register_handlers(dp, services):
                 return
             await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats, page))
             return
+        if payload == 'summary_chats_info':
+            return
         if payload.startswith('summary_chat:'):
             if _chat_type(message) == 'chat':
                 return
@@ -835,27 +837,6 @@ def register_handlers(dp, services):
                 await event.message.answer('Недостаточно прав.')
                 return
             await event.message.answer('Административная панель', attachments=admin_panel_keyboard(role))
-            return
-        if payload == 'admin_chats':
-            if role != 'admin':
-                await event.message.answer('Недостаточно прав.')
-                return
-            rows = services.repository.list_group_chats()
-            lines = [f'📋 Беседы с ботом: {len(rows)}']
-            for i, row in enumerate(rows, 1):
-                cid = row['chat_id']
-                title = row['title']
-                try:
-                    chat = await event.bot.get_chat_by_id(int(cid))
-                    title = _get(chat, 'title') or title
-                    if title:
-                        services.repository.update_chat_title(cid, title)
-                except Exception:
-                    logger.warning('ADMIN_CHAT_TITLE_LOOKUP_FAILED chat_id=%s', cid)
-                lines.append(f'{i}. «{title or "Без названия"}» — id {cid}')
-            if not rows:
-                lines.append('Пока нет бесед, в которых есть бот.')
-            await _send(event, '\n'.join(lines), services.settings_config, admin_panel_keyboard(role))
             return
         if payload.startswith('support_reply:'):
             await event.message.answer('Эта кнопка больше не действует. Создайте новое обращение через /помощь.')

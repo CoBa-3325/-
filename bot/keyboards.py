@@ -65,7 +65,7 @@ def summary_type_keyboard():
         [btn('↩️ Назад','summary_cancel')],
     ])
 
-def summary_chat_keyboard(chats, page=0, page_size=8):
+def summary_chat_keyboard(chats, page=0, page_size=6):
     rows = []
     start = page * page_size
     for chat in chats[start:start + page_size]:
@@ -87,7 +87,6 @@ def summary_period_keyboard():
 
 def admin_panel_keyboard(role=None):
     return kb([
-        [btn('📋 Беседы','admin_chats')],
         [btn('↩️ Назад','back')],
     ])
 
