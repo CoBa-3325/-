@@ -56,8 +56,11 @@ def support_reply_keyboard(ticket_id):
     ])
 
 def ticket_user_keyboard(ticket_id):
-    """Кнопка закрытия запроса пользователем."""
-    return kb([[btn('✅ Закрыть запрос',f'ticket_user_close:{ticket_id}')]])
+    """Кнопки ответа и закрытия запроса пользователем."""
+    return kb([
+        [btn('✉️ Ответить', f'ticket_user_reply:{ticket_id}')],
+        [btn('✅ Закрыть запрос',f'ticket_user_close:{ticket_id}')],
+    ])
 
 def cabinet_keyboard(active=False, role='user'):
     return back_keyboard()

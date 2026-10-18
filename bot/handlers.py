@@ -424,6 +424,14 @@ def register_handlers(dp, services):
         if name == 'support_reply':
             await deliver_support_reply(event, uid, int(data['ticket_id']), text)
             return True
+        if name == 'ticket_user_reply':
+            ticket = services.repository.get_support_ticket(int(data['ticket_id']))
+            if not ticket or ticket['status'] != 'open' or int(ticket['user_id']) != int(uid):
+                services.repository.clear_user_state(uid)
+                await event.message.answer('Обращение закрыто или не найдено.')
+                return True
+            await forward_support_message(event, uid, text)
+            return True
         return False
 
     async def send_payment(event, order, link):
@@ -907,6 +915,20 @@ def register_handlers(dp, services):
             services.repository.set_user_state(uid, 'support_reply', {'ticket_id': ticket_id})
             await event.message.answer(
                 f'Введите ответ по запросу №{ticket_id} ({ticket["user_name"]}, ID {ticket["user_id"]}).',
+                attachments=back_keyboard(),
+            )
+            return
+        if payload.startswith('ticket_user_reply:'):
+            if _chat_type(message) in ('chat', 'channel'):
+                return
+            ticket_id = int(payload.split(':', 1)[1])
+            ticket = services.repository.get_support_ticket(ticket_id)
+            if not ticket or ticket['status'] != 'open' or int(ticket['user_id']) != int(uid):
+                await event.message.answer('Обращение закрыто или не найдено.')
+                return
+            services.repository.set_user_state(uid, 'ticket_user_reply', {'ticket_id': ticket_id})
+            await event.message.answer(
+                f'Введите сообщение для ответа по запросу №{ticket_id}.',
                 attachments=back_keyboard(),
             )
             return
