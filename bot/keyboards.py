@@ -62,6 +62,25 @@ def ticket_user_keyboard(ticket_id):
         [btn('✅ Закрыть запрос',f'ticket_user_close:{ticket_id}')],
     ])
 
+def support_tickets_keyboard(tickets):
+    rows = []
+    for ticket in tickets:
+        status = '🟢 Открыт' if ticket['status'] == 'open' else '⚫ Закрыт'
+        rows.append([btn(f'{status} · Обращение №{ticket["ticket_id"]}', f'ticket_view:{ticket["ticket_id"]}')])
+    rows.append([btn('➕ Новое обращение', 'help_new')])
+    rows.append([btn('↩️ В главное меню', 'back')])
+    return kb(rows)
+
+def support_ticket_actions_keyboard(ticket_id, is_open):
+    rows = []
+    if is_open:
+        rows.extend([
+            [btn('✉️ Ответить', f'ticket_user_reply:{ticket_id}')],
+            [btn('✅ Закрыть обращение', f'ticket_user_close:{ticket_id}')],
+        ])
+    rows.append([btn('↩️ К обращениям', 'help_tickets')])
+    return kb(rows)
+
 def cabinet_keyboard(active=False, role='user'):
     return back_keyboard()
 

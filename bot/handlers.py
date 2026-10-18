@@ -637,7 +637,7 @@ def register_handlers(dp, services):
             and not (payload == 'summary_menu' and _is_bot_added_greeting(message))
         ):
             asyncio.create_task(_delete_report_step(event))
-        elif not payload.startswith(('support_reply:', 'ticket_reply:')):
+        elif not payload.startswith(('support_reply:', 'ticket_reply:', 'ticket_user_reply:')):
             asyncio.create_task(_delete_callback_message(event))
 
         if payload == 'cabinet':
@@ -648,6 +648,22 @@ def register_handlers(dp, services):
             return
         if payload == 'back':
             # Отмена незавершённого ввода.
+            state = services.repository.get_user_state(uid)
+            if state and state[0] == 'ticket_user_reply':
+                services.repository.set_user_state(uid, 'support_followup', state[1])
+                ticket_id = int(state[1]['ticket_id'])
+                ticket = services.repository.get_support_ticket(ticket_id)
+                history = services.repository.get_support_ticket_messages(ticket_id) if ticket else []
+                lines = [f'Обращение №{ticket_id} · открыто']
+                lines.extend(
+                    f'{"Вы" if row["sender_type"] == "user" else "Поддержка"}: {row["body"]}'
+                    for row in history
+                )
+                await event.message.answer(
+                    '\n\n'.join(lines) + '\n\nОтвет отменён.',
+                    attachments=support_ticket_actions_keyboard(ticket_id, bool(ticket and ticket['status'] == 'open')),
+                )
+                return
             services.repository.clear_user_state(uid)
             if _chat_type(message) == 'chat':
                 return
@@ -660,10 +676,38 @@ def register_handlers(dp, services):
             if _chat_type(message) == 'chat':
                 await event.message.answer('Обращения в поддержку принимаются в личных сообщениях с ботом.')
                 return
-            services.repository.set_user_state(uid, 'support_await', {})
+            tickets = services.repository.list_support_tickets(uid)
             await event.message.answer(
-                'Опишите ваш вопрос одним сообщением — я передам его в поддержку.',
-                attachments=back_keyboard(),
+                'Ваши обращения в поддержку. Выберите тикет для просмотра или создайте новый.',
+                attachments=support_tickets_keyboard(tickets),
+            )
+            return
+        if payload == 'help_new':
+            services.repository.set_user_state(uid, 'support_await', {})
+            await event.message.answer('Опишите ваш вопрос одним сообщением — я передам его в поддержку.', attachments=back_keyboard())
+            return
+        if payload == 'help_tickets':
+            tickets = services.repository.list_support_tickets(uid)
+            await event.message.answer(
+                'Ваши обращения в поддержку:',
+                attachments=support_tickets_keyboard(tickets),
+            )
+            return
+        if payload.startswith('ticket_view:'):
+            ticket_id = int(payload.split(':', 1)[1])
+            ticket = services.repository.get_support_ticket(ticket_id)
+            if not ticket or int(ticket['user_id']) != int(uid):
+                await event.message.answer('Обращение не найдено.')
+                return
+            history = services.repository.get_support_ticket_messages(ticket_id)
+            lines = [f'Обращение №{ticket_id} · {"открыто" if ticket["status"] == "open" else "закрыто"}']
+            lines.extend(
+                f'{"Вы" if row["sender_type"] == "user" else "Поддержка"}: {row["body"]}'
+                for row in history
+            )
+            await event.message.answer(
+                '\n\n'.join(lines),
+                attachments=support_ticket_actions_keyboard(ticket_id, ticket['status'] == 'open'),
             )
             return
         if payload.startswith('summary_back:'):

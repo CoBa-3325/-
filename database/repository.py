@@ -335,6 +335,18 @@ class Repository:
     def get_support_ticket(self,ticket_id):
         return self.connection.execute("SELECT * FROM support_tickets WHERE ticket_id=?",(ticket_id,)).fetchone()
 
+    def list_support_tickets(self,user_id):
+        return self.connection.execute(
+            "SELECT * FROM support_tickets WHERE user_id=? ORDER BY updated_at DESC,ticket_id DESC",
+            (user_id,),
+        ).fetchall()
+
+    def get_support_ticket_messages(self,ticket_id):
+        return self.connection.execute(
+            "SELECT * FROM support_ticket_messages WHERE ticket_id=? ORDER BY id",
+            (ticket_id,),
+        ).fetchall()
+
     def close_support_ticket(self,ticket_id):
         now=self.now()
         cur=self.connection.execute(
