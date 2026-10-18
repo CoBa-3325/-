@@ -1015,7 +1015,10 @@ def register_handlers(dp, services):
                 )
             except Exception:
                 logger.exception('SUPPORT_TICKET_CLOSE_NOTIFY_FAILED ticket_id=%s', ticket_id)
-            await event.message.answer(f'Запрос №{ticket_id} закрыт. Для нового обращения отправьте /помощь.')
+            await event.message.answer(
+                f'Запрос №{ticket_id} закрыт. Для нового обращения нажмите «Помощь».',
+                attachments=main_menu(services.subscription.is_active(uid), role, 'dialog'),
+            )
             return
         if payload.startswith('payment_check:'):
             order_id = payload.split(':', 1)[1]
