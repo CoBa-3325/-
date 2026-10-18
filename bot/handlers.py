@@ -295,6 +295,7 @@ def register_handlers(dp, services):
                 )
                 + '\n\n' + result + '\n\n' + REPORT_FEEDBACK_NOTE,
                 services.settings_config,
+                attachments=back_keyboard(),
             )
             # Команду пользователя /отчет не удаляем.
         except Exception:
@@ -344,6 +345,7 @@ def register_handlers(dp, services):
                 f'{_report_people_text(services, chat_id, user_ids)}\n'
                 f'{_report_period_text(start, end, title)}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
                 services.settings_config,
+                attachments=back_keyboard(),
             )
             # Команду пользователя /отчет не удаляем.
         except Exception:
