@@ -398,8 +398,10 @@ def register_handlers(dp, services):
         await event.message.answer(
             f'Ваш запрос {ticket["ticket_id"]} передан в поддержку. '
             'Пока запрос открыт Вы можете писать сообщения с предложениями или описанием проблемы. '
-            'Поддержка ответит Вам в ближайшее время.'
+            'Поддержка ответит Вам в ближайшее время.',
+            attachments=back_keyboard(),
         )
+        services.repository.set_user_state(uid, 'support_followup', {'ticket_id': ticket['ticket_id']})
 
     async def deliver_support_reply(event, uid, ticket_id, text):
         ticket = services.repository.get_support_ticket(ticket_id)
@@ -524,10 +526,12 @@ def register_handlers(dp, services):
                 return
 
         # Every non-command message in the user's DM continues the open ticket.
-        if ctype not in ('chat', 'channel') and text and not text.startswith('/'):
+        if (ctype not in ('chat', 'channel') and text and not text.startswith('/')
+                and state and state[0] == 'support_followup'):
             ticket = services.repository.get_open_support_ticket(uid)
             if ticket:
                 await forward_support_message(event, uid, text)
+                services.repository.set_user_state(uid, 'support_followup', {'ticket_id': ticket['ticket_id']})
                 return
 
         if command in ('/начать',):
@@ -642,6 +646,16 @@ def register_handlers(dp, services):
             await event.message.answer(
                 GROUP_HELP_TEXT if _chat_type(message) == 'chat' else PRIVATE_HELP_TEXT,
                 attachments=main_menu(services.subscription.is_active(uid), role, _chat_type(message)),
+            )
+            return
+        if payload == 'help':
+            if _chat_type(message) == 'chat':
+                await event.message.answer('Обращения в поддержку принимаются в личных сообщениях с ботом.')
+                return
+            services.repository.set_user_state(uid, 'support_await', {})
+            await event.message.answer(
+                'Опишите ваш вопрос одним сообщением — я передам его в поддержку.',
+                attachments=back_keyboard(),
             )
             return
         if payload.startswith('summary_back:'):

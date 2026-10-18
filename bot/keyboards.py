@@ -19,6 +19,7 @@ def main_menu(active=False, role='user', chat_type='chat'):
         rows.append([btn('📊 Отчёт по беседе','summary_menu')])
         rows.append([btn('⭐ Оформить подписку','buy_subscription')])
     rows.append([btn('👤 Личный кабинет','cabinet')])
+    if chat_type != 'chat': rows.append([btn('❓ Помощь','help')])
     if role=='admin': rows.append([btn('🛠 Админ-панель','admin_panel')])
     return kb(rows)
 
@@ -39,6 +40,9 @@ def group_start_keyboard():
 def back_keyboard(target='back'):
     """Клавиатура с единственной кнопкой возврата (например, для отмены ввода)."""
     return kb([[btn('↩️ Назад',target)]])
+
+def support_back_keyboard():
+    return kb([[btn('↩️ Назад', 'back')]])
 
 def cabinet_button_keyboard():
     """Кнопка перехода в личный кабинет (например, после успешной оплаты)."""
