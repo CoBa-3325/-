@@ -62,11 +62,16 @@ def ticket_user_keyboard(ticket_id):
         [btn('✅ Закрыть запрос',f'ticket_user_close:{ticket_id}')],
     ])
 
-def support_tickets_keyboard(tickets):
+def support_tickets_keyboard(tickets, page=0, page_size=5):
     rows = []
-    for ticket in tickets:
+    start = max(0, page) * page_size
+    for ticket in tickets[start:start + page_size]:
         status = '🟢 Открыт' if ticket['status'] == 'open' else '⚫ Закрыт'
         rows.append([btn(f'{status} · Обращение №{ticket["ticket_id"]}', f'ticket_view:{ticket["ticket_id"]}')])
+    if page > 0:
+        rows.append([btn('⬅️ Предыдущие', f'help_tickets_page:{page - 1}')])
+    if start + page_size < len(tickets):
+        rows.append([btn('Следующие ➡️', f'help_tickets_page:{page + 1}')])
     rows.append([btn('➕ Новое обращение', 'help_new')])
     rows.append([btn('↩️ В главное меню', 'back')])
     return kb(rows)

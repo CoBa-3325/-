@@ -693,6 +693,14 @@ def register_handlers(dp, services):
                 attachments=support_tickets_keyboard(tickets),
             )
             return
+        if payload.startswith('help_tickets_page:'):
+            page = max(0, int(payload.split(':', 1)[1]))
+            tickets = services.repository.list_support_tickets(uid)
+            await event.message.answer(
+                'Ваши обращения в поддержку:',
+                attachments=support_tickets_keyboard(tickets, page=page),
+            )
+            return
         if payload.startswith('ticket_view:'):
             ticket_id = int(payload.split(':', 1)[1])
             ticket = services.repository.get_support_ticket(ticket_id)
