@@ -82,7 +82,7 @@ def summary_period_keyboard():
     return kb([
         [btn('За 1 день','summary_period:1'),btn('За 3 дня','summary_period:3')],
         [btn('За 7 дней','summary_period:7'),btn('За 30 дней','summary_period:30')],
-        [btn('↩️ Назад','summary_menu')],
+        [btn('↩️ Назад','summary_back:type')],
     ])
 
 def admin_panel_keyboard(role=None):
@@ -107,5 +107,5 @@ def summary_people_keyboard(authors, selected=None):
         rows.append([btn(f'{prefix} {name[:34]}', f'summary_people_toggle:{user_id}')])
     if selected:
         rows.append([btn('✅ Готово', 'summary_people_done')])
-    rows.append([btn('↩️ Назад', 'summary_menu')])
+    rows.append([btn('↩️ Назад', 'summary_back:type')])
     return kb(rows)

@@ -642,6 +642,34 @@ def register_handlers(dp, services):
                 attachments=main_menu(services.subscription.is_active(uid), role, _chat_type(message)),
             )
             return
+        if payload.startswith('summary_back:'):
+            target = payload.split(':', 1)[1]
+            state = services.repository.get_user_state(uid)
+            if target == 'type':
+                if state and state[0] == 'summary_people':
+                    data = state[1]
+                    services.repository.set_user_state(uid, 'summary_origin', {
+                        'message_id': data.get('source_user_message_id'),
+                        'chat_id': data['chat_id'],
+                        'greeting': data.get('greeting', _user_greeting(message, event)),
+                    })
+                greeting = (state[1].get('greeting') if state else None) or _user_greeting(message, event)
+                await event.message.answer(
+                    f'Уважаемый {greeting}, какой отчёт сформировать?',
+                    attachments=summary_type_keyboard(),
+                )
+                return
+            if target == 'people':
+                if not state or state[0] != 'summary_people':
+                    await event.message.answer('Пожалуйста, начните создание отчёта заново через /отчет.')
+                    return
+                data = state[1]
+                authors = services.repository.list_message_authors(data['chat_id'])
+                await event.message.answer(
+                    f'Уважаемый {data.get("greeting", _user_greeting(message, event))}, выберите одного или нескольких участников:',
+                    attachments=summary_people_keyboard(authors, data.get('selected', [])),
+                )
+                return
         if payload == 'summary_menu':
             if _chat_type(message) not in ('chat', 'dialog'):
                 return
@@ -688,16 +716,20 @@ def register_handlers(dp, services):
             await event.message.answer(f'Уважаемый {greeting}, какой отчёт сформировать?', attachments=summary_type_keyboard())
             return
         if payload == 'summary_cancel':
+            state = services.repository.get_user_state(uid)
+            if state and state[0] == 'summary_origin':
+                origin = state[1]
+                chats = await _user_report_chats(event, services, uid) if _chat_type(message) != 'chat' else []
+                if chats and origin.get('chat_id'):
+                    await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
+                    return
             services.repository.clear_user_state(uid)
             greeting = _user_greeting(message, event)
             if _chat_type(message) != 'chat':
                 chats = await _user_report_chats(event, services, uid)
                 await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
                 return
-            await event.message.answer(
-                f'Уважаемый {greeting}, какой отчёт сформировать?',
-                attachments=summary_type_keyboard(),
-            )
+            await event.message.answer(f'Уважаемый {greeting}, какой отчёт сформировать?', attachments=summary_type_keyboard())
             return
         if payload == 'summary_type:general':
             greeting = _user_greeting(message, event)
@@ -1001,7 +1033,7 @@ def summary_people_period_keyboard():
     return kb([
         [btn('За 1 день', 'summary_people_period:1'), btn('За 3 дня', 'summary_people_period:3')],
         [btn('За 7 дней', 'summary_people_period:7'), btn('За 30 дней', 'summary_people_period:30')],
-        [btn('↩️ Назад', 'summary_menu')],
+        [btn('↩️ Назад', 'summary_back:people')],
     ])
 
 
