@@ -174,6 +174,7 @@ def _role(services, uid):
 
 
 REPORT_CHAT_CHECK_CONCURRENCY = 5
+ADMIN_CHATS_PAGE_SIZE = 5
 
 
 async def _check_user_chat(event, services, uid, row):
@@ -280,6 +281,31 @@ def register_handlers(dp, services):
                     services.settings_config.subscription_price_6_months,
                 ),
             ),
+        )
+
+    async def show_admin_chats(event, page=0):
+        """Paginated list of group chats the bot has been added to."""
+        page_size = ADMIN_CHATS_PAGE_SIZE
+        total = services.repository.count_group_chats()
+        max_page = max(0, math.ceil(total / page_size) - 1)
+        page = min(max(0, page), max_page)
+        chats = services.repository.list_group_chats(
+            limit=page_size, offset=page * page_size
+        )
+        if not total:
+            text = '📋 Беседы с ботом\n\nБот пока не добавлен ни в одну беседу.'
+        else:
+            lines = ['📋 Беседы с ботом', f'Всего бесед: {total}', '']
+            for index, chat in enumerate(chats, start=page * page_size + 1):
+                title = ' '.join((chat['title'] or '').split()) or f'Беседа {chat["chat_id"]}'
+                lines.append(f'{index}. {title[:60]} · ID {chat["chat_id"]}')
+            if max_page:
+                lines.append('')
+                lines.append(f'Страница {page + 1} из {max_page + 1}')
+            text = '\n'.join(lines)
+        await event.message.answer(
+            text,
+            attachments=admin_chats_keyboard(page, total, page_size),
         )
 
     async def generate_summary(event, uid, chat_id, days, greeting, source_user_message_id=None):
@@ -983,7 +1009,22 @@ def register_handlers(dp, services):
             if role != 'admin':
                 await event.message.answer('Недостаточно прав.')
                 return
-            await event.message.answer('Административная панель', attachments=admin_panel_keyboard(role))
+            await event.message.answer(
+                f'🛠 Административная панель\n\nБесед с ботом: {services.repository.count_group_chats()}',
+                attachments=admin_panel_keyboard(role),
+            )
+            return
+        if payload == 'admin_chats' or payload.startswith('admin_chats_page:'):
+            if role != 'admin':
+                await event.message.answer('Недостаточно прав.')
+                return
+            page = 0
+            if payload.startswith('admin_chats_page:'):
+                try:
+                    page = max(0, int(payload.split(':', 1)[1]))
+                except ValueError:
+                    page = 0
+            await show_admin_chats(event, page)
             return
         if payload.startswith('support_reply:'):
             await event.message.answer('Эта кнопка больше не действует. Создайте новое обращение через /помощь.')

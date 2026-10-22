@@ -118,8 +118,22 @@ def summary_period_keyboard():
 
 def admin_panel_keyboard(role=None):
     return kb([
+        [btn('📋 Беседы с ботом','admin_chats')],
         [btn('↩️ Назад','back')],
     ])
+
+def admin_chats_keyboard(page=0, total=0, page_size=5):
+    """Pagination for the admin chat list; page is zero-based."""
+    rows = []
+    nav = []
+    if page > 0:
+        nav.append(btn('⬅️ Предыдущие', f'admin_chats_page:{page - 1}'))
+    if (page + 1) * page_size < total:
+        nav.append(btn('Следующие ➡️', f'admin_chats_page:{page + 1}'))
+    if nav:
+        rows.append(nav)
+    rows.append([btn('↩️ Назад', 'admin_panel')])
+    return kb(rows)
 
 def subscription_keyboard(price1=99,price3=259,price6=559):return kb([[btn(f'1 месяц — {price1} ₽','sub_tariff:1_month'),btn(f'3 месяца — {price3} ₽','sub_tariff:3_months')],[btn(f'6 месяцев — {price6} ₽','sub_tariff:6_months')],[btn('↩️ Назад','back')]])
 def user_list_keyboard(rows,prefix,back='admin_panel'):

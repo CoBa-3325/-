@@ -74,11 +74,24 @@ class Repository:
             FROM chats c WHERE c.chat_type='chat'
             ORDER BY c.updated_at DESC""").fetchall()
 
-    def list_group_chats(self):
-        """All group chats the bot knows about, newest activity first."""
-        return self.connection.execute(
-            "SELECT chat_id,chat_type,title,updated_at FROM chats WHERE chat_type='chat' ORDER BY updated_at DESC"
-        ).fetchall()
+    def list_group_chats(self, limit=None, offset=0):
+        """All group chats the bot knows about, newest activity first.
+
+        ``limit``/``offset`` page the result for the admin list; without them
+        the full list is returned (used by the membership scheduler).
+        """
+        sql = "SELECT chat_id,chat_type,title,updated_at FROM chats WHERE chat_type='chat' ORDER BY updated_at DESC"
+        params = ()
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params = (int(limit), int(offset))
+        return self.connection.execute(sql, params).fetchall()
+
+    def count_group_chats(self):
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS n FROM chats WHERE chat_type='chat'"
+        ).fetchone()
+        return int(row['n'] or 0)
 
     def delete_chat(self,chat_id):
         cur=self.connection.execute("DELETE FROM chats WHERE chat_id=?",(chat_id,))
