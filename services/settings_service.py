@@ -1,7 +1,5 @@
 """Сервис сохранения настроек периода консолидации для каждого чата."""
 
-from  schemas.settings import ChatSettings
-
 
 class SettingsService:
     """Изолирует бизнес-правила настроек от Telegram/MAX handlers и DB."""

@@ -173,35 +173,70 @@ def _role(services, uid):
     return services.roles.get_role(uid)
 
 
+REPORT_CHAT_CHECK_CONCURRENCY = 5
+
+
+async def _check_user_chat(event, services, uid, row):
+    """Validate one tracked chat against MAX and refresh its stored title."""
+    chat_id = row['chat_id']
+    try:
+        membership, user_membership = await asyncio.gather(
+            event.bot.get_me_from_chat(int(chat_id)),
+            event.bot.get_chat_member(int(chat_id), int(uid)),
+            return_exceptions=True,
+        )
+        if isinstance(membership, BaseException):
+            raise membership
+        if isinstance(user_membership, BaseException):
+            raise user_membership
+        if membership is None:
+            services.repository.delete_chat(chat_id)
+            return None
+        if user_membership is None:
+            # Fail closed: without confirming the user's membership, do not
+            # expose the group in the report picker.
+            return None
+        title = _get(membership, 'title')
+        if title and title != row['title']:
+            services.repository.update_chat_title(chat_id, title)
+            row = dict(row)
+            row['title'] = title
+        return row
+    except Exception as exc:
+        from scheduler.scheduler import Scheduler
+        if Scheduler._chat_unavailable(exc):
+            services.repository.delete_chat(chat_id)
+        else:
+            logger.warning('USER_CHAT_MEMBERSHIP_CHECK_FAILED chat_id=%s user_id=%s error=%s', chat_id, uid, exc)
+        return None
+
+
 async def _user_report_chats(event, services, uid):
-    """Return chats where both the current user and the bot are members."""
+    """Return chats where both the current user and the bot are members.
+
+    Every chat costs two MAX API round-trips, so the checks run concurrently
+    with a small limit instead of one-by-one; the picker used to wait for
+    ``len(chats) * 2`` sequential requests before it could open.
+    """
     chats = services.repository.list_user_chats(uid)
-    active = []
-    for row in chats:
-        chat_id = row['chat_id']
-        try:
-            membership = await event.bot.get_me_from_chat(int(chat_id))
-            if membership is None:
-                services.repository.delete_chat(chat_id)
-                continue
-            user_membership = await event.bot.get_chat_member(int(chat_id), int(uid))
-            if user_membership is None:
-                continue
-            title = _get(membership, 'title')
-            if title and title != row['title']:
-                services.repository.update_chat_title(chat_id, title)
-                row = dict(row)
-                row['title'] = title
-            active.append(row)
-        except Exception as exc:
-            from scheduler.scheduler import Scheduler
-            if Scheduler._chat_unavailable(exc):
-                services.repository.delete_chat(chat_id)
-            else:
-                # Fail closed: without confirming the user's membership, do
-                # not expose the group in the report picker.
-                logger.warning('USER_CHAT_MEMBERSHIP_CHECK_FAILED chat_id=%s user_id=%s error=%s', chat_id, uid, exc)
-    return active
+    if not chats:
+        return []
+    semaphore = asyncio.Semaphore(REPORT_CHAT_CHECK_CONCURRENCY)
+
+    async def check(row):
+        async with semaphore:
+            return await _check_user_chat(event, services, uid, row)
+
+    results = await asyncio.gather(*(check(row) for row in chats))
+    return [row for row in results if row is not None]
+
+
+async def _user_report_chat(event, services, uid, chat_id):
+    """Validate only the single chat selected in the picker."""
+    for row in services.repository.list_user_chats(uid):
+        if int(row['chat_id']) == int(chat_id):
+            return await _check_user_chat(event, services, uid, row)
+    return None
 
 
 def _non_report_attachments(event, attachments):
@@ -214,10 +249,9 @@ async def _send_start_message(services, send, uid):
     services.repository.upsert_user(uid)
     await send(
         PRIVATE_HELP_TEXT,
-        attachments=private_start_menu(
-            services.subscription.is_active(uid),
-            _role(services, uid),
-        ),
+        # The keyboard ignores its "active" argument, so the subscription
+        # lookup that used to be passed here was an unused database query.
+        attachments=private_start_menu(role=_role(services, uid)),
     )
 
 
@@ -261,8 +295,9 @@ def register_handlers(dp, services):
             )
             return
         period = period_for_interval('custom', custom_days=days)
-        rows = services.repository.get_messages(chat_id, period.start, period.end)
-        if not rows:
+        # Existence check only: SummaryService reads the rows itself, so
+        # materialising the whole period here would run the same query twice.
+        if not services.repository.has_messages(chat_id, period.start, period.end):
             services.cooldown.release(chat_id)
             await event.message.answer(f'{greeting}, за выбранный период сообщений не найдено.')
             return
@@ -318,8 +353,7 @@ def register_handlers(dp, services):
                 if remaining else f'{greeting}, в этом чате уже выполняется запрос.'
             )
             return
-        rows = services.repository.get_messages(chat_id, start, end, user_ids=user_ids)
-        if not rows:
+        if not services.repository.has_messages(chat_id, start, end, user_ids=user_ids):
             services.cooldown.release(chat_id)
             await event.message.answer(f'{greeting}, за выбранный период сообщений нет.')
             return
@@ -522,19 +556,21 @@ def register_handlers(dp, services):
         if _get(sender, 'is_bot', False):
             return
         ctype = _chat_type(message)
-        services.repository.upsert_user(uid, first, last)
-        services.repository.upsert_chat(chat_id, ctype)
+        # One commit for both rows instead of one per upsert.
+        services.repository.touch_user_chat(uid, first, last, chat_id, ctype)
         text = (_get(body, 'text') or '').strip()
         command, _ = _command(text)
 
-        # Persistent input flows survive bot restarts.
-        state = services.repository.get_user_state(uid)
-        if state and not text.startswith('/') and ctype not in ('chat', 'channel'):
+        # Persistent input flows survive bot restarts. Only direct messages use
+        # them, so group traffic skips this read entirely.
+        is_direct = ctype not in ('chat', 'channel')
+        state = services.repository.get_user_state(uid) if is_direct else None
+        if state and not text.startswith('/') and is_direct:
             if await handle_state_input(event, uid, text, state):
                 return
 
         # Every non-command message in the user's DM continues the open ticket.
-        if (ctype not in ('chat', 'channel') and text and not text.startswith('/')
+        if (is_direct and text and not text.startswith('/')
                 and state and state[0] == 'support_followup'):
             ticket = services.repository.get_open_support_ticket(uid)
             if ticket:
@@ -546,7 +582,7 @@ def register_handlers(dp, services):
             help_text = GROUP_HELP_TEXT if ctype == 'chat' else PRIVATE_HELP_TEXT
             attachments = (
                 group_start_keyboard() if ctype == 'chat'
-                else main_menu(services.subscription.is_active(uid), _role(services, uid), ctype)
+                else main_menu(role=_role(services, uid), chat_type=ctype)
             )
             await _send(event, help_text, services.settings_config, attachments)
             return
@@ -643,7 +679,7 @@ def register_handlers(dp, services):
         if payload == 'cabinet':
             await event.message.answer(
                 services.cabinet.render(uid),
-                attachments=cabinet_keyboard(services.subscription.is_active(uid), role),
+                attachments=cabinet_keyboard(),
             )
             return
         if payload == 'back':
@@ -669,7 +705,7 @@ def register_handlers(dp, services):
                 return
             await event.message.answer(
                 GROUP_HELP_TEXT if _chat_type(message) == 'chat' else PRIVATE_HELP_TEXT,
-                attachments=main_menu(services.subscription.is_active(uid), role, _chat_type(message)),
+                attachments=main_menu(role=role, chat_type=_chat_type(message)),
             )
             return
         if payload == 'help':
@@ -780,7 +816,7 @@ def register_handlers(dp, services):
             if _chat_type(message) == 'chat':
                 return
             chat_id = int(payload.split(':', 1)[1])
-            if not any(int(row['chat_id']) == chat_id for row in await _user_report_chats(event, services, uid)):
+            if not await _user_report_chat(event, services, uid, chat_id):
                 await event.message.answer('Эта беседа недоступна для отчёта. Отправьте /отчет ещё раз.')
                 return
             greeting = _user_greeting(message, event)
@@ -793,16 +829,15 @@ def register_handlers(dp, services):
             return
         if payload == 'summary_cancel':
             state = services.repository.get_user_state(uid)
-            if state and state[0] == 'summary_origin':
-                origin = state[1]
-                chats = await _user_report_chats(event, services, uid) if _chat_type(message) != 'chat' else []
-                if chats and origin.get('chat_id'):
-                    await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
-                    return
+            # Validate the chat list once; the previous implementation could
+            # repeat the whole membership scan twice in a single click.
+            chats = await _user_report_chats(event, services, uid) if _chat_type(message) != 'chat' else []
+            if state and state[0] == 'summary_origin' and chats and state[1].get('chat_id'):
+                await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
+                return
             services.repository.clear_user_state(uid)
             greeting = _user_greeting(message, event)
             if _chat_type(message) != 'chat':
-                chats = await _user_report_chats(event, services, uid)
                 await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
                 return
             await event.message.answer(f'Уважаемый {greeting}, какой отчёт сформировать?', attachments=summary_type_keyboard())
@@ -1025,7 +1060,7 @@ def register_handlers(dp, services):
                 logger.exception('SUPPORT_TICKET_CLOSE_NOTIFY_FAILED ticket_id=%s', ticket_id)
             await event.message.answer(
                 f'Запрос №{ticket_id} закрыт. Для нового обращения нажмите «Помощь».',
-                attachments=main_menu(services.subscription.is_active(uid), role, 'dialog'),
+                attachments=main_menu(role=role, chat_type='dialog'),
             )
             return
         if payload.startswith('payment_check:'):

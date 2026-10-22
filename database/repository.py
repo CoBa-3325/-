@@ -1,9 +1,15 @@
 """Repository and transactional operations for the bot."""
 from __future__ import annotations
-import json, sqlite3, uuid
+import json, sqlite3
 from datetime import datetime, timezone
 from  schemas.message import MessageRecord
 from  schemas.settings import ChatSettings
+
+UPSERT_USER_SQL = """INSERT INTO users(user_id,first_name,last_name,role,subscription_start,subscription_end,is_unlimited_subscription,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET first_name=excluded.first_name,last_name=excluded.last_name,updated_at=excluded.updated_at"""
+
+UPSERT_CHAT_SQL = """INSERT INTO chats(chat_id,chat_type,title,created_at,updated_at) VALUES(?,?,?,?,?)
+    ON CONFLICT(chat_id) DO UPDATE SET chat_type=excluded.chat_type,title=COALESCE(excluded.title,chats.title),updated_at=excluded.updated_at"""
 
 class Repository:
     def __init__(self, connection: sqlite3.Connection):
@@ -16,10 +22,25 @@ class Repository:
     # ---------- users / roles ----------
     def upsert_user(self, user_id, first_name='', last_name=''):
         now=self.now()
-        self.connection.execute("""INSERT INTO users(user_id,first_name,last_name,role,subscription_start,subscription_end,is_unlimited_subscription,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET first_name=excluded.first_name,last_name=excluded.last_name,updated_at=excluded.updated_at""",
+        self.connection.execute(UPSERT_USER_SQL,
             (user_id,first_name,last_name,'user',None,None,0,now,now))
         self.connection.commit()
+
+    def touch_user_chat(self, user_id, first_name, last_name, chat_id, chat_type, title=None):
+        """Persist the message author and the chat with a single commit.
+
+        ``message_created`` needs both rows on every incoming message; doing
+        them separately meant two WAL commits per message instead of one.
+        """
+        now=self.now()
+        try:
+            self.connection.execute(UPSERT_USER_SQL,
+                (user_id,first_name,last_name,'user',None,None,0,now,now))
+            self.connection.execute(UPSERT_CHAT_SQL,(chat_id,chat_type,title,now,now))
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
 
     def get_role(self, user_id):
         row=self.connection.execute("SELECT role FROM users WHERE user_id=?",(user_id,)).fetchone()
@@ -40,8 +61,7 @@ class Repository:
     # ---------- chats / context ----------
     def upsert_chat(self,chat_id,chat_type,title=None):
         now=self.now()
-        self.connection.execute("""INSERT INTO chats(chat_id,chat_type,title,created_at,updated_at) VALUES(?,?,?,?,?)
-            ON CONFLICT(chat_id) DO UPDATE SET chat_type=excluded.chat_type,title=COALESCE(excluded.title,chats.title),updated_at=excluded.updated_at""",(chat_id,chat_type,title,now,now)); self.connection.commit()
+        self.connection.execute(UPSERT_CHAT_SQL,(chat_id,chat_type,title,now,now)); self.connection.commit()
 
     def list_user_chats(self,user_id):
         """List every tracked group containing the bot.
@@ -76,16 +96,27 @@ class Repository:
             (message.max_message_id,message.chat_id,message.user_id,message.user_name,message.text,message.source,message.timestamp.isoformat(),message.reply_to))
         self.connection.commit(); return cur.rowcount>0
 
-    def get_messages(self, chat_id, start, end, user_ids=None):
-        sql = "SELECT * FROM messages WHERE chat_id=? AND timestamp>=? AND timestamp<?"
+    def _message_filter(self, chat_id, start, end, user_ids=None):
+        sql = "chat_id=? AND timestamp>=? AND timestamp<?"
         params = [chat_id, start.isoformat(), end.isoformat()]
         if user_ids:
             ids = [int(x) for x in user_ids]
-            placeholders = ','.join('?' for _ in ids)
-            sql += f" AND user_id IN ({placeholders})"
+            sql += " AND user_id IN (" + ','.join('?' for _ in ids) + ")"
             params.extend(ids)
-        sql += " ORDER BY timestamp ASC"
-        return self.connection.execute(sql, params).fetchall()
+        return sql, params
+
+    def get_messages(self, chat_id, start, end, user_ids=None):
+        where, params = self._message_filter(chat_id, start, end, user_ids)
+        return self.connection.execute(
+            f"SELECT * FROM messages WHERE {where} ORDER BY timestamp ASC", params
+        ).fetchall()
+
+    def has_messages(self, chat_id, start, end, user_ids=None):
+        """Cheap existence check; avoids loading a whole period just to test it."""
+        where, params = self._message_filter(chat_id, start, end, user_ids)
+        return self.connection.execute(
+            f"SELECT 1 FROM messages WHERE {where} LIMIT 1", params
+        ).fetchone() is not None
 
     def list_message_authors(self, chat_id):
         """Return authors already observed by the bot in this chat."""

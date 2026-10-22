@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from maxapi import Bot, Dispatcher
@@ -51,6 +52,7 @@ def build_services(settings):
     summarizer = Summarizer(
         gpt,
         settings.max_prompt_chars,
+        settings.yandex_gpt_concurrency,
     )
 
     message = MessageService(repository)
@@ -93,6 +95,7 @@ def build_services(settings):
 
     services.connection = connection
     services.repository = repository
+    services.gpt = gpt
     services.message = message
     services.summary = summary
     services.settings = SettingsService(repository)
@@ -233,6 +236,14 @@ async def main():
         scheduler.stop()
 
         scheduler_task.cancel()
+
+        # Close pooled HTTP connections so shutdown does not leave sockets
+        # (or "Unclosed client session" warnings) behind.
+        with contextlib.suppress(Exception):
+            await services.gpt.close()
+
+        with contextlib.suppress(Exception):
+            await services.payment.yookassa.aclose()
 
         services.connection.close()
 

@@ -34,28 +34,37 @@ class Scheduler:
     async def check_chats(self):
         """Check actual bot membership, not just chat existence."""
         rows = self.repository.list_group_chats()
-        checked = 0
-        removed = 0
-        for row in rows:
+        if not rows:
+            logger.info('CHAT_MEMBERSHIP_CHECK_FINISHED total=0 active=0 removed=0')
+            return
+        # Each check is a network call; run a few at a time so the daily scan
+        # does not take one round-trip per chat.
+        semaphore = asyncio.Semaphore(5)
+
+        async def check(row):
             chat_id = row['chat_id']
-            try:
-                # This endpoint specifically checks whether the current bot
-                # is a member of the chat. get_chat_by_id() is not enough:
-                # the chat may still exist after the bot was removed.
-                membership = await self.bot.get_me_from_chat(int(chat_id))
-                if membership is None:
-                    if self.repository.delete_chat(chat_id):
-                        removed += 1
-                        logger.info('CHAT_REMOVED_FROM_DB chat_id=%s reason=no_membership', chat_id)
-                else:
-                    checked += 1
-            except Exception as exc:
-                if self._chat_unavailable(exc):
-                    if self.repository.delete_chat(chat_id):
-                        removed += 1
-                        logger.info('CHAT_REMOVED_FROM_DB chat_id=%s reason=no_membership error=%s', chat_id, exc)
-                else:
+            async with semaphore:
+                try:
+                    # This endpoint specifically checks whether the current bot
+                    # is a member of the chat. get_chat_by_id() is not enough:
+                    # the chat may still exist after the bot was removed.
+                    membership = await self.bot.get_me_from_chat(int(chat_id))
+                    return 'active' if membership is not None else 'removed'
+                except Exception as exc:
+                    if self._chat_unavailable(exc):
+                        return 'removed'
                     logger.warning('CHAT_CHECK_FAILED chat_id=%s error=%s', chat_id, exc)
+                    return 'failed'
+
+        results = await asyncio.gather(*(check(row) for row in rows))
+        checked = results.count('active')
+        removed = 0
+        for row, result in zip(rows, results):
+            if result != 'removed':
+                continue
+            if self.repository.delete_chat(row['chat_id']):
+                removed += 1
+                logger.info('CHAT_REMOVED_FROM_DB chat_id=%s reason=no_membership', row['chat_id'])
         logger.info('CHAT_MEMBERSHIP_CHECK_FINISHED total=%s active=%s removed=%s', len(rows), checked, removed)
 
     async def run(self):

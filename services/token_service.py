@@ -6,9 +6,17 @@ class TokenService:
     def __init__(self, repository, free_amount=30):
         self.repository = repository
         self.free_amount = free_amount
+        # ``ensure_trial`` is called for every incoming group message. The
+        # grant only has to be created once, so remember successful checks for
+        # this process instead of opening a transaction per message.
+        self._trial_checked: set[int] = set()
 
     def ensure_trial(self, user_id: int) -> None:
-        self.repository.ensure_trial_grant(user_id, self.free_amount)
+        key = int(user_id)
+        if key in self._trial_checked:
+            return
+        self.repository.ensure_trial_grant(key, self.free_amount)
+        self._trial_checked.add(key)
 
     def ensure(self, user_id, chat_id=None):
         # chat_id is accepted for backwards compatibility; tokens are user-wide.

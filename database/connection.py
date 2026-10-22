@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chat_time ON messages(chat_id,timestamp);
+-- Covering index for author aggregation (list_message_authors) and for
+-- "report by participants" queries; avoids full table scans per chat.
+CREATE INDEX IF NOT EXISTS idx_messages_chat_user ON messages(chat_id,user_id,user_name);
 
 CREATE TABLE IF NOT EXISTS chat_settings (
     chat_id INTEGER PRIMARY KEY,
@@ -271,8 +274,17 @@ def connect(db_path: str) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path, timeout=30, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute('PRAGMA journal_mode=WAL')
+    # WAL + NORMAL is the recommended combination for a write-heavy SQLite
+    # workload: commits stop fsyncing the WAL on every write (a checkpoint
+    # still syncs), which removes the main cost of processing each message.
+    # Only an OS/power failure can lose the last transactions; the database
+    # itself stays consistent.
+    connection.execute('PRAGMA synchronous=NORMAL')
     connection.execute('PRAGMA foreign_keys=ON')
     connection.execute('PRAGMA busy_timeout=30000')
+    # Keep transient sorting/grouping structures (author lists, ORDER BY)
+    # in memory instead of spilling to a temp file.
+    connection.execute('PRAGMA temp_store=MEMORY')
     # Existing installations need shape changes before SCHEMA creates indexes.
     _ensure_user_columns(connection)
     connection.executescript(SCHEMA)
