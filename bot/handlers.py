@@ -154,9 +154,13 @@ async def _delete_report_step(event):
 
 def _is_report_navigation(payload):
     return (
-        payload in ('summary_menu', 'summary_people_done', 'summary_cancel')
+        payload in (
+            'summary_menu', 'summary_people', 'summary_people_done',
+            'summary_cancel',
+        )
         or payload.startswith('summary_chat:')
         or payload.startswith('summary_type:')
+        or payload.startswith('summary_back:')
         or payload.startswith('summary_period:')
         or payload.startswith('summary_people_toggle:')
         or payload.startswith('summary_people_period:')
@@ -909,12 +913,18 @@ def register_handlers(dp, services):
         if payload.startswith('summary_people_toggle:'):
             state = services.repository.get_user_state(uid)
             if not state or state[0] != 'summary_people':
-                await event.message.answer('Пожалуйста, выберите участников заново.')
+                await event.message.answer(
+                    'Пожалуйста, выберите участников заново.',
+                    attachments=summary_people_recovery_keyboard(),
+                )
                 return
             data = state[1]
             chat_id = int(data['chat_id'])
             if _chat_type(message) == 'chat' and int(_get(_get(message, 'recipient'), 'chat_id') or chat_id) != chat_id:
-                await event.message.answer('Пожалуйста, выберите участников заново.')
+                await event.message.answer(
+                    'Пожалуйста, выберите участников заново.',
+                    attachments=summary_people_recovery_keyboard(),
+                )
                 return
             target = int(payload.split(':', 1)[1])
             selected = {int(x) for x in data.get('selected', [])}
@@ -933,7 +943,10 @@ def register_handlers(dp, services):
         if payload == 'summary_people_done':
             state = services.repository.get_user_state(uid)
             if not state or state[0] != 'summary_people' or not state[1].get('selected'):
-                await event.message.answer('Выберите хотя бы одного участника.')
+                await event.message.answer(
+                    'Выберите хотя бы одного участника.',
+                    attachments=summary_people_recovery_keyboard(),
+                )
                 return
             await event.message.answer(
                 f'Уважаемый {state[1].get("greeting", _user_greeting(message, event))}, теперь выберите период:',
@@ -943,7 +956,10 @@ def register_handlers(dp, services):
         if payload.startswith('summary_people_period:'):
             state = services.repository.get_user_state(uid)
             if not state or state[0] != 'summary_people' or not state[1].get('selected'):
-                await event.message.answer('Пожалуйста, выберите участников заново.')
+                await event.message.answer(
+                    'Пожалуйста, выберите участников заново.',
+                    attachments=summary_people_recovery_keyboard(),
+                )
                 return
             data = state[1]
             chat_id = int(data['chat_id'])

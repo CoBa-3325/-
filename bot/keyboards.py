@@ -154,3 +154,8 @@ def summary_people_keyboard(authors, selected=None):
         rows.append([btn('✅ Готово', 'summary_people_done')])
     rows.append([btn('↩️ Назад', 'summary_back:type')])
     return kb(rows)
+
+
+def summary_people_recovery_keyboard():
+    """Restart participant selection after an invalid or stale wizard action."""
+    return kb([[btn('👥 Выбрать участников', 'summary_people')]])
