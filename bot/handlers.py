@@ -360,7 +360,6 @@ def register_handlers(dp, services):
                 )
                 + '\n\n' + result + '\n\n' + REPORT_FEEDBACK_NOTE,
                 services.settings_config,
-                attachments=back_keyboard(),
             )
             # Команду пользователя /отчет не удаляем.
         except Exception:
@@ -409,7 +408,6 @@ def register_handlers(dp, services):
                 f'{_report_people_text(services, chat_id, user_ids)}\n'
                 f'{_report_period_text(start, end, title)}\n\n{result}\n\n{REPORT_FEEDBACK_NOTE}',
                 services.settings_config,
-                attachments=back_keyboard(),
             )
             # Команду пользователя /отчет не удаляем.
         except Exception:
@@ -700,10 +698,14 @@ def register_handlers(dp, services):
         if (
             _chat_type(message) == 'chat'
             and _is_report_navigation(payload)
+            and payload != 'summary_cancel'
             and not (payload == 'summary_menu' and _is_bot_added_greeting(message))
         ):
             asyncio.create_task(_delete_report_step(event))
-        elif not payload.startswith(('support_reply:', 'ticket_reply:', 'ticket_user_reply:')):
+        elif (
+            payload != 'summary_cancel'
+            and not payload.startswith(('support_reply:', 'ticket_reply:', 'ticket_user_reply:'))
+        ):
             asyncio.create_task(_delete_callback_message(event))
 
         if payload == 'cabinet':
@@ -858,19 +860,11 @@ def register_handlers(dp, services):
             await event.message.answer(f'Уважаемый {greeting}, какой отчёт сформировать?', attachments=summary_type_keyboard())
             return
         if payload == 'summary_cancel':
-            state = services.repository.get_user_state(uid)
-            # Validate the chat list once; the previous implementation could
-            # repeat the whole membership scan twice in a single click.
-            chats = await _user_report_chats(event, services, uid) if _chat_type(message) != 'chat' else []
-            if state and state[0] == 'summary_origin' and chats and state[1].get('chat_id'):
-                await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
-                return
             services.repository.clear_user_state(uid)
-            greeting = _user_greeting(message, event)
-            if _chat_type(message) != 'chat':
-                await event.message.answer(f'Выберите беседу для отчёта ({len(chats)}):', attachments=summary_chat_keyboard(chats))
-                return
-            await event.message.answer(f'Уважаемый {greeting}, какой отчёт сформировать?', attachments=summary_type_keyboard())
+            if _chat_type(message) == 'chat':
+                await _delete_report_step(event)
+            else:
+                await _delete_callback_message(event)
             return
         if payload == 'summary_type:general':
             greeting = _user_greeting(message, event)
